@@ -1,0 +1,373 @@
+﻿#import "Lib_HomeScan";
+enum { uPnPSearchRequest,uPnPSearchResponse, 
+BeaconRequest, BeaconResponse, InterPANBroadCast,
+NonceRequest, NonceResponse,
+SearchLightRequest,SearchLightRequestSuccess, SearchLightScanRequest, SearchLightScanResponse, SearchLightIdentifyRequest, SearchLightJoinRequest,SearchLightJoinResponse,
+RequestLightResult,RequestLightResultResponse, GetInfoRequest, GetInfoResponse, DeleteLightRequest, DeleteLightResponse, DeleteUserIDRequest, DeleteUserIDResponse, LinkButtonRequest, LinkButtonResponse,
+JoinNearestDeviceRequest,JoinNearestDeviceSuccess, NearestLightScanRequest,NearestLightScanResponse,NearestLightRequest,
+ControlCommandRequest, ControlCommandResponse, ZigControlCommandRequest, ZigControlCommandResponse, GREEN, RED, BLACK, WHITE, HACKED,
+ControlPointIP, HubIP, HubID, ServerName, HubPANID, SDDeviceID,
+AttackerIP,AttackerID,
+HubNonce,
+ZigbeeAP, 
+Null };
+
+
+
+var CPFoundHubIP = Null;
+var CPNonce = Null;
+var SDConnectedPANID = Null;
+var SDConnectedHubID = Null;
+var SDLightColor = BLACK;
+var HUBConnectedDeviceID = Null;
+var HUBAuthenticatedDeviceID = Null;
+var linkButtonOn = false;
+
+var AttackerConnectedPANID = Null;
+var AttackerFakeHubID = Null;
+var AttackerFoundHubIP = Null;
+var AttackerNonce = Null;
+var AttackerStealDeviceID = Null; //The Device ID attacker retrieved from the broadcast of SD
+
+
+var breakPointReached=false;
+
+channel wifi 0;
+channel zigbee 0;
+channel test 0;
+
+SD() = SDDiscovery() ||| SDZigBeeListener();
+SDZigBeeListener() = BeaconResponseListener() ||| SearchLightScanRequestListener() ||| SearchLightJoinRequestListener() ||| NearestLightScanRequestListener() ||| ZigCommandRequestListener() ;
+
+BeaconResponseListener() =
+	zigbee?BeaconResponse.unknownPANID.unknownHubID.unknownAP -> //SD awaits Beacon Response from ZFE
+	newPANConnection{
+		SDConnectedPANID = unknownPANID;
+		SDConnectedHubID = unknownHubID;
+	}-> //SD records PANID
+	zigbee!SDConnectedPANID.InterPANBroadCast.SDDeviceID->zigbee!SDConnectedPANID.InterPANBroadCast.SDDeviceID->zigbee!SDConnectedPANID.InterPANBroadCast.SDDeviceID->
+	
+	BeaconResponseListener();
+
+
+
+SearchLightScanRequestListener() = 
+	zigbee?[unknownPANID==SDConnectedPANID]unknownPANID.SearchLightScanRequest ->
+	zigbee!SDDeviceID.SDConnectedHubID.SDConnectedPANID.SearchLightScanResponse ->
+	SearchLightScanRequestListener();
+
+SearchLightJoinRequestListener() =
+	zigbee?[unknownSenderID==SDConnectedHubID &&unknownPANID==SDConnectedPANID]unknownSenderID.SDDeviceID.unknownPANID.SearchLightJoinRequest ->
+	zigbee!SDDeviceID.SDConnectedHubID.SDConnectedPANID.SearchLightJoinResponse ->
+	SearchLightJoinRequestListener();
+
+NearestLightScanRequestListener() =
+	zigbee?[unknownPANID==SDConnectedPANID]unknownPANID.NearestLightScanRequest.unknownHubID ->
+	forceChangeConnectedHub{
+		SDConnectedHubID = unknownHubID;
+	}->
+	zigbee!SDDeviceID.SDConnectedHubID.SDConnectedPANID.SearchLightScanResponse ->
+	NearestLightScanRequestListener();
+
+ZigCommandRequestListener() = 
+	zigbee?[unknownSenderID==SDConnectedHubID &&unknownPANID==SDConnectedPANID]unknownSenderID.SDDeviceID.unknownPANID.ZigControlCommandRequest.unknownColor ->
+	changeColor{
+		SDLightColor = unknownColor;
+	}->
+	zigbee!SDDeviceID.SDConnectedHubID.SDConnectedPANID.ZigControlCommandResponse ->
+	ZigCommandRequestListener();
+
+SDDiscovery() = SDSendBeaconRequest -> zigbee!BeaconRequest ->zigbee!BeaconRequest ->zigbee!BeaconRequest ->Skip;
+
+SDBeaconRequest() = 
+	zigbee!BeaconRequest -> //SD Broadcast beaconRequest
+    Skip;
+	
+Hub() = HubOperation() ||| HubListener();
+
+HubOperation() = Skip;
+
+HubButtonPress() =
+	pressButton{linkButtonOn=true;} ->Skip;
+	
+	
+HubListener() = HSReceivePnPRequest() ||| HSReceiveNonceRequest() ||| HSReceiveSearchLightRequest() ||| HSReceiveLightRequest() ||| HSReceiveGetInfoRequest() ||| HSReceiveDeleteLightRequest() ||| HSReceiveDeleteUserIDRequest() ||| 
+HSReceiveLinkButtonRequest() ||| HSReceiveCommandRequest() ||| HSReceiveJoinNearestDeviceRequest() |||
+ZFEReceiveBeaconRequest() ||| ZFEReceiveSearchLightScanResponse() ||| ZFEReceiveSearchLightJoinResponse() ||| ZFEReceiveInterPANBroadcast();
+
+HSReceivePnPRequest() = 
+	wifi?senderIP.uPnPSearchRequest -> //Hub HS waits for uPNPSearchReequest
+	wifi!HubIP.senderIP.uPnPSearchResponse.HubID.ServerName -> //HS sends uPNP response
+	HSReceivePnPRequest();
+
+HSReceiveNonceRequest() =
+	wifi?[linkButtonOn==true]senderIP.HubIP.NonceRequest ->
+	wifi!HubIP.senderIP.NonceResponse.HubNonce ->
+	turnOffLinkButton{
+		linkButtonOn=false;
+	} ->
+	HSReceiveNonceRequest();
+
+HSReceiveSearchLightRequest() = 
+	wifi?unknownIP.HubIP.SearchLightRequest.HubNonce ->		
+	zigbee!HubPANID.SearchLightScanRequest -> //zigbee!HubPANID.SearchLightScanRequest -> zigbee!HubPANID.SearchLightScanRequest ->
+	wifi!HubIP.unknownIP.SearchLightRequestSuccess ->
+	HSReceiveSearchLightRequest();
+
+HSReceiveJoinNearestDeviceRequest() =
+	wifi?unknownIP.HubIP.JoinNearestDeviceRequest.HubNonce ->		
+	zigbee!HubPANID.NearestLightScanRequest.HubID -> zigbee!HubPANID.NearestLightScanRequest.HubID -> zigbee!HubPANID.NearestLightScanRequest.HubID ->
+	wifi!HubIP.unknownIP.JoinNearestDeviceSuccess ->
+	HSReceiveJoinNearestDeviceRequest();
+	
+ZFEReceiveSearchLightScanResponse() =
+	zigbee?senderID.HubID.HubPANID.SearchLightScanResponse ->
+	zigbee!HubID.senderID.HubPANID.SearchLightJoinRequest ->
+	ZFEReceiveSearchLightScanResponse();
+
+ZFEReceiveSearchLightJoinResponse() =
+	zigbee?senderID.HubID.HubPANID.SearchLightJoinResponse ->
+	markSDAsAuthenticated{HUBAuthenticatedDeviceID = senderID;} ->
+	ZFEReceiveSearchLightJoinResponse();
+
+HSReceiveLightRequest() = 
+	wifi?unknownIP.HubIP.RequestLightResult.HubNonce ->
+	wifi!HubIP.unknownIP.RequestLightResultResponse.HUBAuthenticatedDeviceID ->
+	HSReceiveLightRequest();
+
+HSReceiveGetInfoRequest() = 
+	wifi?unknownIP.HubIP.GetInfoRequest.HubNonce ->
+	wifi!HubIP.unknownIP.GetInfoResponse.linkButtonOn ->
+	HSReceiveGetInfoRequest();
+	
+HSReceiveDeleteLightRequest() =
+	wifi?unknownIP.HubIP.DeleteLightRequest.HubNonce ->
+	processingDeletion{
+		SDConnectedHubID = Null;
+		HUBConnectedDeviceID= Null;
+	} ->
+	wifi!HubIP.unknownIP.DeleteLightResponse ->
+	HSReceiveDeleteLightRequest();
+
+HSReceiveDeleteUserIDRequest() = 
+	wifi?unknownIP.HubIP.DeleteUserIDRequest.HubNonce ->
+	HSprocessingDeletion->
+	wifi!HubIP.unknownIP.DeleteUserIDResponse ->
+	HSReceiveDeleteUserIDRequest();
+
+HSReceiveLinkButtonRequest() = 
+	wifi?unknownIP.HubIP.LinkButtonRequest.HubNonce ->
+	processingDeletion{
+		linkButtonOn = true;
+	}->
+	wifi!HubIP.unknownIP.LinkButtonResponse ->
+	HSReceiveLinkButtonRequest();
+
+HSReceiveCommandRequest() = 
+	wifi?unknownIP.HubIP.ControlCommandRequest.HubNonce.unknownColor ->
+	zigbee!HubID.HUBConnectedDeviceID.HubPANID.ZigControlCommandRequest.unknownColor ->
+	
+	zigbee?[senderID==HUBConnectedDeviceID]senderID.HubID.HubPANID.ZigControlCommandResponse ->
+	wifi!HubIP.unknownIP.ControlCommandResponse ->
+	HSReceiveCommandRequest();
+
+ZFEReceiveBeaconRequest() = 
+	zigbee?BeaconRequest ->
+	zigbee!BeaconResponse.HubPANID.HubID.ZigbeeAP ->zigbee!BeaconResponse.HubPANID.HubID.ZigbeeAP ->zigbee!BeaconResponse.HubPANID.HubID.ZigbeeAP ->
+	ZFEReceiveBeaconRequest();
+	
+ZFEReceiveInterPANBroadcast() =
+	zigbee?HubPANID.InterPANBroadCast.unknownDeviceID -> //ZFE waits for interPAN broadcast that matches its PANID
+	{HUBConnectedDeviceID=unknownDeviceID;} ->
+	Skip;
+	
+CP() = CPHTTPListener() ||| CPOperations();
+	
+CPHTTPListener() = UPnPSearchResponseListener();
+
+CPOperations() =  CPuPNPBroadCast();HubButtonPress();HubButtonPress();HubButtonPress();CPRequestToken();CPSearchLight();CPControls();
+
+CPControls() = CPRequestLightResult() [] CPGetInfoRequest() [] CPLinkButtonRequest() [] CPControlCommand() [] CPDeleteLightRequest() [] CPDeleteUserIDRequest() ;CPControls();
+
+UPnPSearchResponseListener() = 
+   wifi?unknownIP.ControlPointIP.uPnPSearchResponse.unknownID.unknownServerName ->
+   CPDiscoveredHub{CPFoundHubIP=unknownIP} ->
+   UPnPSearchResponseListener();
+
+CPDiscovery() = atomic{CPuPNPBroadCast()};//CPuPNPBroadCast();CPuPNPBroadCast()};
+
+CPuPNPBroadCast() =
+   CPUPNP ->
+   wifi!ControlPointIP.uPnPSearchRequest -> //wifi!ControlPointIP.uPnPSearchRequest -> wifi!ControlPointIP.uPnPSearchRequest ->
+   Skip;
+
+CPRequestToken() =
+    CPSendNonceRequest ->
+    wifi!ControlPointIP.CPFoundHubIP.NonceRequest ->
+    wifi?senderIP.ControlPointIP.NonceResponse.unknownNonce ->
+    getNonce{
+    //verify sender.
+    	if (senderIP == CPFoundHubIP){
+    		CPNonce=unknownNonce;
+    	}
+    } ->
+   	Skip;
+
+CPSearchLight() =
+    CPSendSearchLight ->
+	wifi!ControlPointIP.CPFoundHubIP.SearchLightRequest.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.SearchLightRequestSuccess ->
+	Skip;
+
+CPJoinNearestDeviceRequest() =
+	wifi!ControlPointIP.CPFoundHubIP.JoinNearestDeviceRequest.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.JoinNearestDeviceSuccess ->
+	Skip;
+
+CPRequestLightResult() =
+	wifi!ControlPointIP.CPFoundHubIP.RequestLightResult.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.RequestLightResultResponse.unknownDeviceID ->
+	Skip;
+	
+CPGetInfoRequest() =
+	wifi!ControlPointIP.CPFoundHubIP.GetInfoRequest.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.GetInfoResponse.unknownLinkBState ->
+	Skip;
+
+CPDeleteLightRequest() =
+	wifi!ControlPointIP.CPFoundHubIP.DeleteLightRequest.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.DeleteLightResponse ->
+	Skip;
+	
+CPDeleteUserIDRequest() = 
+	wifi!ControlPointIP.CPFoundHubIP.DeleteUserIDRequest.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.DeleteUserIDResponse ->
+	Skip;
+	
+CPLinkButtonRequest() =
+	wifi!ControlPointIP.CPFoundHubIP.LinkButtonRequest.CPNonce ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.LinkButtonResponse ->
+	Skip;
+
+CPControlCommand() =
+    CPSendGreenCommand -> 
+	wifi!ControlPointIP.CPFoundHubIP.ControlCommandRequest.CPNonce.GREEN ->
+	wifi?[senderIP == CPFoundHubIP]senderIP.ControlPointIP.ControlCommandResponse ->
+	CPControls();
+
+Attacker() = AttackerPreparations();AttackerActions() ||| AttackerListener();
+
+AttackerPreparations() = AttackerUPnPRequest();AttackerBeaconRequest();
+
+AttackerUPnPRequest() =
+	attackeruPnP ->
+	wifi!AttackerIP.uPnPSearchRequest ->wifi!AttackerIP.uPnPSearchRequest ->wifi!AttackerIP.uPnPSearchRequest ->
+	Skip;
+	
+AttackerBeaconRequest() = 
+	zigbee!BeaconRequest -> //zigbee!BeaconRequest -> zigbee!BeaconRequest -> 
+	Skip;
+
+AttackerActions() = [AttackerStealDeviceID!=Null]FakeIDAttack() [] NearestDeviceAttack() [] [AttackerFoundHubIP!=Null]AttackerNonceRequest() [][AttackerNonce!=Null] AttackerRemoveCP();AttackerActions();
+
+AttackerRemoveCP() =
+	wifi!AttackerIP.AttackerFoundHubIP.DeleteUserIDRequest.AttackerNonce ->
+	Skip;
+
+FakeIDAttack() = 
+    sendCommandUsingFakeID ->
+	zigbee!AttackerFakeHubID.AttackerStealDeviceID.AttackerConnectedPANID.ZigControlCommandRequest.HACKED ->
+	Skip;
+
+NearestDeviceAttack() =
+	attackNearestLight->
+	zigbee!AttackerConnectedPANID.NearestLightScanRequest.AttackerID ->
+	zigbee?[unknownHubID == AttackerID && AttackerConnectedPANID == unknownPANID]unknownDeviceID.unknownHubID.unknownPANID.SearchLightScanResponse ->
+	Skip;
+
+AttackerNonceRequest() =
+	attackerNonceRequest ->
+	wifi!AttackerIP.AttackerFoundHubIP.NonceRequest ->
+    Skip;
+	
+AttackerListener() =  AttackerPnPResponseListener() ||| AttackerBeaconResponseListener() ||| DeviceIDBroadcastListener() ||| AttackerNonceResponseListener();
+
+AttackerNonceResponseListener() =
+ 	wifi?senderIP.AttackerIP.NonceResponse.unknownNonce ->
+    attackerGetNonce{
+    	AttackerNonce = unknownNonce;
+    } ->
+    AttackerNonceResponseListener();
+    
+AttackerBeaconResponseListener() =
+	zigbee?BeaconResponse.unknownPANID.unknownHubID.unknownAP -> //SD awaits Beacon Response from ZFE
+	newAttackerPANConnection{
+		AttackerConnectedPANID = unknownPANID;
+		AttackerFakeHubID = unknownHubID;
+	}->
+	AttackerBeaconResponseListener();
+
+AttackerPnPResponseListener() = 
+	wifi?unknownReceiverIP.AttackerHubIP.uPnPSearchResponse.unknownHubID.unknownServerName ->
+	attackerGetHubIP{AttackerFoundHubIP = unknownReceiverIP} ->
+	AttackerPnPResponseListener();
+
+DeviceIDBroadcastListener() =
+	zigbee?[unknownPANID == AttackerConnectedPANID]unknownPANID.InterPANBroadCast.unknownDeviceID ->
+	stealHubID{
+		AttackerStealDeviceID=unknownDeviceID
+	} ->
+	DeviceIDBroadcastListener();
+
+System = CP() || Hub() || SD();
+SystemWithAttacker() = CP() ||| Hub() ||| SD() ||| Attacker();
+
+#define CP_FOUND_HUB CPFoundHubIP != Null;
+#define SD_FOUND_HUB SDConnectedPANID != Null && SDConnectedHubID != Null;
+#define HUB_FOUND_SD HUBConnectedDeviceID != Null;
+#define CP_GOT_NONCE CPNonce != Null;
+#define SD_AUTHENTICATED HUBAuthenticatedDeviceID == SDDeviceID;
+#define SD_TURNED_GREEN SDLightColor == GREEN;
+
+#define ATTACKER_IN_PAN AttackerConnectedPANID == HubPANID;
+#define ATTACKER_FOUND_HUB AttackerFoundHubIP == HubIP;
+#define SD_HACKED_COLOR SDLightColor == HACKED;
+#define SD_FORCE_CHANGED_CONNECTION SDConnectedHubID == AttackerID;
+#define ATTACKER_STEAL_DEVICE_ID AttackerStealDeviceID != Null;
+#define ATTACKER_GET_NONCE AttackerNonce != Null;
+//discovery
+#assert System |= [] (CPUPNP -> <> CPDiscoveredHub);
+#assert System |=  [](SDSendBeaconRequest -> <>SD_FOUND_HUB);
+
+//authentication
+#assert System |=   [](pressButton -><>( CPSendNonceRequest -> <> CP_GOT_NONCE));
+#assert System |=   [](CPSendSearchLight -> <> SD_AUTHENTICATED);
+
+//Control
+#assert System |=  [](CPSendGreenCommand -> <> SD_TURNED_GREEN);
+
+//Normal Trace
+#assert System reaches SD_TURNED_GREEN;
+
+//Attacks
+//Misresponse to Discovery Request.
+
+#assert SystemWithAttacker |= attackeruPnP -> <> ATTACKER_FOUND_HUB;
+
+//Flawed Authentication Protocol
+#assert SystemWithAttacker reaches ATTACKER_GET_NONCE; //get trace
+#assert SystemWithAttacker |= attackerNonceRequest -> <> ATTACKER_GET_NONCE;
+
+//Lack of Control to Adminstration Commands
+#assert SystemWithAttacker |= ATTACKER_GET_NONCE -> <> HSprocessingDeletion;
+//Misuse of Underlying Protocols
+#assert SystemWithAttacker reaches ATTACKER_IN_PAN; //intercept BeaconRequest No need action triggering.
+
+#assert SystemWithAttacker |= sendCommandUsingFakeID -> <>SD_HACKED_COLOR;
+#assert SystemWithAttacker |= attackNearestLight -> <>SD_FORCE_CHANGED_CONNECTION;
+#assert SystemWithAttacker reaches SD_HACKED_COLOR;
+
+#define debug breakPointReached==true;
+
+#assert System reaches debug;
+#assert System deadlockfree;

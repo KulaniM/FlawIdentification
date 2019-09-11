@@ -1,0 +1,197 @@
+#import "Lib_HomeScan";
+channel attackerBuffer 3; 
+channel network[4] 0; // 0 as SD openwifi, 1 as home wifi, 2 as attacker openwifi, 3 as attacker wifi
+channel wifi0 0;
+
+enum {
+	// index of network, 0, 1, 2, 3
+	ch_openwifi, ch_wifi, ch_attacker_openwifi, ch_attacker_wifi
+};
+
+var ch = 0;
+var sd_ch = 0;
+var sd_turnoff_openwifi = false;
+var attacker_get_ssid = false;
+
+var sd_hijacked = false;
+var attacker_get_SDInfo = false;
+var attacker_get_wifiInfo = false;
+var attacker_executed_command = false;
+
+enum { 
+ LifxWiFiBeacon, SSID, BSSID, 
+ OpenSystemAuthenticationRequest, AssociationResponse,
+ GetService, StateService, SetAccessPoint, 
+ StateAccessPoint, Configured, 
+ SetPowerRequest, SetColorRequest, GetLights, 
+ LightsState,
+ Success, Station, 
+ Username, Password, PasswordEncoded, 
+ AttackerWifiUsername, AttackerWifiPassword, AttackerWifiPasswordEncoded,
+ CP, SD, Attacker, Nobody
+}; 
+
+
+// Attacker Behaviour
+
+AttackerProc() = AttackerAsCP()[]AttackerAsSD()[]AttackerRelay();
+
+AttackerRelay() = attackerBuffer?x.c -> network[c]!x -> AttackerProc() []
+				  ifa(attacker_get_wifiInfo) { network[ch_wifi]?x -> attackerBuffer!x.ch_wifi -> AttackerProc() } []
+				  network[ch_openwifi]?x -> attackerBuffer!x.ch_openwifi -> AttackerProc();
+
+				  
+AttackerAsCP() = wifi0?LifxWiFiBeacon.SSID.BSSID -> 
+				 wifi0!SSID.OpenSystemAuthenticationRequest ->
+				 wifi0?AssociationResponse -> attackerGetSSID{ attacker_get_ssid = true } -> AttackerAsCPDiscovery() []
+				 ifa(attacker_get_ssid) { AttackerAsCPDiscovery() } []
+				 ifa(attacker_get_wifiInfo) { attackerExecutedCmd{ attacker_executed_command = true; } -> AttackerSendCommand() };
+					
+AttackerAsCPDiscovery() = 
+  ifa(!attacker_get_wifiInfo) { AttackerAsCPConfiguration() } else { AttackerAsCPConfigured() };
+
+// Attacker acts as CP to get it's IP address and configuration (StateService) through openwifi channel 
+AttackerAsCPConfiguration() = network[ch_openwifi]!GetService -> network[ch_openwifi]?StateService -> 
+							  getSDInfo{attacker_get_SDInfo = true} -> AttackerConfigAttackerWifi();
+
+// Attacker acts as CP to send command through wifi						  
+AttackerAsCPConfigured() = network[ch_wifi]!GetService -> network[ch_wifi]?StateService.Configured -> 
+						   AttackerSendCommand();						   
+ 
+// Attacker connect to attacker
+AttackerConfigAttackerWifi() = network[ch_openwifi]!Station.AttackerWifiUsername.AttackerWifiPassword -> 
+    						   network[ch_openwifi]?Station.AttackerWifiUsername.AttackerWifiPasswordEncoded ->
+    						   connectAttackerWifi{ sd_hijacked = true } -> AttackerProc();
+
+AttackerSendCommand() = AttackerSetPowerRequest() [] AttackerSetColorRequest() [] AttackerGetLights();
+
+AttackerSetPowerRequest() = 
+  network[ch_wifi]!SetPowerRequest -> network[ch_wifi]?Success -> 
+  attackerExecutedCmd{ attacker_executed_command = true; } -> AttackerProc();
+AttackerSetColorRequest() = 
+  network[ch_wifi]!SetColorRequest -> network[ch_wifi]?Success ->
+  attackerExecutedCmd{ attacker_executed_command = true; } -> AttackerProc();
+AttackerGetLights() = 
+  network[ch_wifi]!GetLights       -> network[ch_wifi]?LightsState -> 
+  attackerExecutedCmd{ attacker_executed_command = true; } -> AttackerProc();
+
+AttackerAsSD() = wifi0!LifxWiFiBeacon.SSID.BSSID -> 
+				 wifi0?SSID.OpenSystemAuthenticationRequest ->
+				 wifi0!AssociationResponse ->
+				 network[ch_attacker_openwifi]?GetService -> 
+				 network[ch_attacker_openwifi]!StateService -> 
+				 network[ch_attacker_openwifi]?Station.Username.Password ->
+				 network[ch_attacker_openwifi]!Station.Username.PasswordEncoded ->
+				 getWifiInfo{attacker_get_wifiInfo=true} -> 
+				 AttackerProc();
+
+							  
+// Benign CP Process: Discovery Stage - Authentication Stage - Control Stage
+CPProc() = CPDiscovery0();
+
+// Stage 1: Discover devices
+CPDiscovery0() = wifi0?LifxWiFiBeacon.SSID.BSSID -> 
+				 wifi0!SSID.OpenSystemAuthenticationRequest ->
+				 wifi0?AssociationResponse -> CPSelectChannel();
+CPSelectChannel() = 
+  selectChannel{ ch = ch_openwifi} -> CPDiscovery() []
+  selectChannel{ ch = ch_attacker_openwifi } -> CPDiscovery();
+
+
+CPDiscovery() = 
+  ifa(ch == ch_openwifi || ch == ch_attacker_openwifi){ CPConfiguration() } else { CPConfigured() };
+
+// Case 1: communicate through openwifi
+CPConfiguration() = network[ch]!GetService -> network[ch]?StateService -> CPDirectConnect();
+CPDirectConnect() = CPConfigWifi() [] CPSendCommand();
+
+// Case 2: communicate through home wifi
+CPConfigured() = network[ch]!GetService -> network[ch]?StateService.Configured -> CPSendCommand();
+
+// Stage 2: Setup connections with smart devices 
+// Configure device to connect to home wifi supplying with Username and Password (via openwifi)
+CPConfigWifi() =
+  ifa(ch == ch_openwifi || ch == ch_attacker_openwifi) { 
+    network[ch]!Station.Username.Password ->
+    network[ch]?Station.Username.PasswordEncoded -> changeChannel{ ch = ch_wifi } ->
+    CPSendCommand()
+  } 
+  [] CPDiscovery();
+
+// Stage 3: Send command to smart devices 
+CPSendCommand() = CPSetPowerRequest() [] CPSetColorRequest() [] CPGetLights() [] CPDiscovery();
+
+CPSetPowerRequest() = network[ch]!SetPowerRequest -> network[ch]?Success		-> CPSendCommand();
+CPSetColorRequest() = network[ch]!SetColorRequest -> network[ch]?Success		-> CPSendCommand();
+CPGetLights() 		= network[ch]!GetLights 	  -> network[ch]?LightsState 	-> CPSendCommand();
+
+
+// Benign SD Process: Discovery Stage - Authentication Stage - Control Stage
+SDProc() = SDDiscovery0();
+
+// Stage 1: Being discovered by control points
+SDDiscovery0() = wifi0!LifxWiFiBeacon.SSID.BSSID -> 
+				 wifi0?SSID.OpenSystemAuthenticationRequest ->
+				 wifi0!AssociationResponse -> SDDiscovery();
+
+SDDiscovery() = 
+  ifa(!sd_turnoff_openwifi ){ SDConfiguration() } else { SDConfigured() };
+
+// Case 1: communicate through openwifi
+SDConfiguration() = network[ch_openwifi]?GetService -> network[ch_openwifi]!StateService -> SDDirectConnect();
+SDDirectConnect() = SDConfigWifi() [] SDReceiveCommand();
+
+// Case 2: communicate through home wifi
+SDConfigured() = 
+  ifa(sd_ch == ch_wifi || sd_ch == ch_attacker_wifi) {
+    network[sd_ch]?GetService -> network[sd_ch]!StateService.Configured -> SDReceiveCommand() 
+  } [] SDDiscovery();
+
+// Stage 2: Setup connections with smart devices 
+// SD configured to connect to home wifi supplied with Username and Password (via its openwifi)
+SDConfigWifi() = network[ch_openwifi]?Station.x.y -> SDConnectToWifi(x, y);
+
+// Connect to home wifi and turn off openwifi
+SDConnectToWifi(x, y) = 
+  ifa(x == Username && y == Password) {
+    network[ch_openwifi]!Station.Username.PasswordEncoded -> 
+    connectToHomeWifi{sd_ch = ch_wifi; sd_turnoff_openwifi = true;} -> SDReceiveCommand()
+  } 
+  [] ifa(x == AttackerWifiUsername && y == AttackerWifiPassword){
+    network[ch_openwifi]!Station.AttackerWifiUsername.AttackerWifiPasswordEncoded -> 
+    connectToAttackerWifi{sd_ch = ch_attacker_wifi; sd_turnoff_openwifi = true;} -> SDReceiveCommand()
+  }
+  [] SDDiscovery();
+
+
+// Stage 3: Receive command from control point
+SDReceiveCommand() = SDSetPowerRequest() [] SDSetColorRequest() [] SDGetLights() [] SDDiscovery();
+
+SDSetPowerRequest() = network[sd_ch]?SetPowerRequest -> network[sd_ch]!Success 		-> SDReceiveCommand();
+SDSetColorRequest() = network[sd_ch]?SetColorRequest -> network[sd_ch]!Success 		-> SDReceiveCommand();
+SDGetLights() 		= network[sd_ch]?GetLights 		 -> network[sd_ch]!LightsState  -> SDReceiveCommand();
+
+System =AutoGeneratedAttacker() || CPProc() || SDProc();
+
+system_with_Attacker = CPProc() || SDProc() || AttackerProc();  
+
+#define violation_wifi_disabled sd_hijacked == true;
+#define violation_controlled_by_attacker attacker_executed_command == true;
+#define violation_getSDInfo attacker_get_SDInfo == true;
+#define violation_get_wifiInfo attacker_get_wifiInfo == true;
+
+#assert system_with_Attacker deadlockfree; 
+#assert system_with_Attacker reaches violation_wifi_disabled;
+#assert system_with_Attacker reaches violation_controlled_by_attacker;
+#assert system_with_Attacker reaches violation_getSDInfo;
+#assert system_with_Attacker reaches violation_get_wifiInfo;
+
+#assert System deadlockfree;
+
+var<Knowledge> AutoGeneratedAttackerKnowledge;
+AutoGeneratedAttacker()= attackerBuffer?msg1{addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []attackerBuffer?msg1{msg1{msg2.addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []network[4]?msg1{addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []network[4]?msg1{msg1{msg2.addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []wifi0?msg1{addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []wifi0?msg1{msg1{msg2.addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker();

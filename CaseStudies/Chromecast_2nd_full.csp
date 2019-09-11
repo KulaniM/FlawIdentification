@@ -1,0 +1,482 @@
+#import "Lib_HomeScan";
+enum{ChromecastWiFiBeacon,AttackChromecastWiFiBeacon,SSID,BSSID,AttackSSID,AttackBSSID,AttackOpenSystemAuthenticationRequest,OpenSystemAuthenticationRequest, AttackAssociationResponse,
+AssociationResponse,GetEurekaInfo,SignRParam,VersionRParam,NameRParam,SetupStateRParam,EthernetConnectedRParam,IPaddressRParam,SsdpUdnRParam,ModelNameRParam,
+DeviceCapabilitiesRParam,SSIDSuffixRParam,TosAcceptedRParam,PublicKeyRParam,BSSIDRParam,
+Version,Name,SetupState,EthernetConnected,IPaddress,SsdpUdn,ModelName,DeviceCapabilities,SSIDSuffix,TosAccepted,PublickKey,Certificate,
+IntermediateCerts,SignedData,SuccessScanRequest, GetScanResults, HomeWifiSSID,HomeWifiBSSID,Frequency,SignalLevel,WPAAuth7,WPACiper4,
+PostConnectWifi, adec_aenc_Password_PublicKey, association_ScreenID, GetLoungToken, GetMdxSessionStatus, MDNSDiscoveryResponse,SuccessSaveRequest, SuccessSetRequest,
+NewIPAddress,NewSetupState,MDNSDiscoveryRequest,PostSaveWifi,ImmediateTrue,PostSetEurekaInfo,NewName,OptInStatusTrue,SuccessConnectRequest,PrivateKey,
+SID,GsessionID,LoungStatus,PlaylistModified,OnAutoplayModeChanged,OnPlaylistModeChanged,AvailabilityResponse,Expiration,PostBindRequest,Device,ID,ControlPointName,AppName,MethodSetPlayList,VideoID,AttackVideoID,
+GetScreenAvailability,ValidScreenID,GetAttackMdxSessionStatus,attackMDNSDiscoveryRequest,attackMDNSDiscoveryResponse};
+
+
+channel wifi 0;
+channel openwifi 0;
+channel wifi0 0;
+var AttackValidScreenID;
+var CurrentVideoID;
+var AttackCurrentVideoID;
+var sd_cp_discovery_complete = false;
+var receive_beacon_response= false;
+var attack_receive_beacon_response=false;
+var attack_sd_cp_discovery_complete=false;
+var signeddata= false;
+var certificate= false;
+var sd_cp_authentication_complete=false;
+var verified_signeddata_certificate= false;
+var process_cp_sd_authentication_complete = false;
+var process_cp_sd_post_authentication_complete= false;
+var x=0;
+var PostScanWifi=0;
+var success_scan_request=false;
+var post_authentication_complete= false;
+var scan_result=false;
+var public_key= 123;
+var enc_pwd;
+var password;
+var scan_request_authentication_complete=false;
+var success_set_request=false;
+var post_request_authentication_complete= false;
+var mdns_authentication_complete=false;
+var receive_mdns_request=false;
+var receive_mdns_response=false;
+var valid_screen_id_complete= false;
+var mdx_complete=false;
+var lounge_complete=false;
+var screenid;
+var attacker_screen_id;
+var end_video_reached=false;
+var end_control=false;
+var playlist_reached= false;
+var reached_25=false;
+var ScreenID;
+var AttackScreenID;
+var reached_end=false;
+var attack_received_dns_response = false;
+var attack_received_screen = false;
+var attack_receive_mdns_request=false;
+var current_attacker_video_id_updated= false;
+var attack_current_video_reached=false;
+NewNonce() = setx{x=x+1}->Skip;
+Verify_Signeddata_Certificate()= verifysigneddata{signeddata=true}->
+								 verifycertificate{certificate=true}-> 
+								 Skip;
+Get_Post_Scan_Wifi()= setpostscanwifi{PostScanWifi=1}->Skip;
+
+EncryptPassword() = encrypt{enc_pwd = (password + public_key)%256; } -> Skip;
+
+DecryptPassword() = decrypt{ var private_key = 133; password = (enc_pwd + private_key)%256;} -> Skip;
+
+association()= associate{screenid=ScreenID;}-> Skip;
+
+attack_association()= attack_associate{attacker_screen_id=AttackScreenID;}-> Skip;
+							
+SDDiscoveryProcess()=
+wifi0!ChromecastWiFiBeacon.SSID.BSSID ->
+if(receive_beacon_response == false) { SDDiscoveryProcess() } 
+else 
+{wifi0?SSID.OpenSystemAuthenticationRequest ->
+wifi0!AssociationResponse ->
+Skip};
+
+CPDiscoveryProcess() =
+wifi0?ChromecastWiFiBeacon.ssid.bssid{receive_beacon_response=true} ->
+wifi0!ssid.OpenSystemAuthenticationRequest ->
+wifi0?AssociationResponse ->
+sddiscoverycomplete{sd_cp_discovery_complete = true} ->
+Skip;//CPSDAuthenticationProcess();
+
+SDCPDiscoveryProcess() = SDDiscoveryProcess() || CPDiscoveryProcess();
+
+CPSDAuthenticationProcess() = CPAuthenticationProcess() || SDAuthenticationProcess();
+CPSDPostScanAuthenticationProcess()= CPPostAuthenticationProcess() || SDPostAuthenticationProcess();
+CPSDScanResultAuthenticationProcess()=CPScanResultAuthenticationProcess() || SDScanResultAuthenticationProcess();
+CPSDPostRequestAuthenticationProcess()= CPPostRequestAuthenticationProcess()|| SDPostRequestAuthenticationProcess();
+CPSDMDNSAuthenticationProcess()= CPMDNSAuthenticationProcess() || SDMDNSAuthenticationProcess();
+SDGSScreenAuthenticationProcess()= GSScreenAuthenticationProcess() || SDScreenAuthenticationProcess();
+CPSDMDXAuthenticationProcess()= SDMDXAuthenticationProcess() || CPMDXAuthenticationProcess();
+
+
+CPGSLoungeAuthenticationProcess()= CPLoungeAuthenticationProcess() || GSLoungeAuthenticationProcess();
+
+
+GSCPScreenControlProcess()= GSScreenControlProcess() || CPScreenControlProcess();
+
+
+
+CPAuthenticationProcess() =
+NewNonce();
+openwifi!GetEurekaInfo.SignRParam.VersionRParam.NameRParam.SetupStateRParam.EthernetConnectedRParam.IPaddressRParam.SsdpUdnRParam.ModelNameRParam.DeviceCapabilitiesRParam.SSIDSuffixRParam.TosAcceptedRParam.PublicKeyRParam.BSSIDRParam.x ->
+openwifi?Version.Name.SetupState.EthernetConnected.IPaddress.SsdpUdn.ModelName.DeviceCapabilities.SSIDSuffix.TosAccepted.BSSID.PublickKey.Certificate.IntermediateCerts.SignedData->
+if(verified_signeddata_certificate==true){Verify_Signeddata_Certificate()};
+if(signeddata==false && certificate==false){CPAuthenticationProcess()}
+else
+{pcomplete{process_cp_sd_authentication_complete = true}->Skip};
+
+SDAuthenticationProcess()=
+openwifi?GetEurekaInfo.SignRParam.VersionRParam.NameRParam.SetupStateRParam.EthernetConnectedRParam.IPaddressRParam.SsdpUdnRParam.ModelNameRParam.DeviceCapabilitiesRParam.SSIDSuffixRParam.TosAcceptedRParam.PublicKeyRParam.BSSIDRParam.X ->
+openwifi!Version.Name.SetupState.EthernetConnected.IPaddress.SsdpUdn.ModelName.DeviceCapabilities.SSIDSuffix.TosAccepted.BSSID.PublickKey.Certificate.IntermediateCerts.SignedData{verified_signeddata_certificate=true} ->
+Skip;
+
+
+CPPostAuthenticationProcess()=
+Get_Post_Scan_Wifi();
+openwifi!PostScanWifi->
+openwifi?SuccessScanRequest ->
+if(success_scan_request== false){CPPostAuthenticationProcess()}
+else
+{scanrequestcomplete{post_authentication_complete= true}->Skip};
+
+
+SDPostAuthenticationProcess()=
+openwifi?postscanwifi->
+openwifi!SuccessScanRequest{success_scan_request=true} ->
+Skip;
+
+CPScanResultAuthenticationProcess()=
+openwifi!GetScanResults->
+if(scan_result==false){CPScanResultAuthenticationProcess()}
+else{openwifi?HomeWifiSSID.HomeWifiBSSID.Frequency.SignalLevel.WPAAuth7.WPACiper4 ->
+EncryptPassword();
+openwifi!PostConnectWifi.SSID.enc_pwd.WPAAuth7.WPACiper4 ->
+openwifi?SuccessConnectRequest.passwd ->
+openwifi!GetEurekaInfo.IPaddressRParam.VersionRParam.SetupStateRParam ->
+openwifi?NewIPAddress.Version.NewSetupState ->
+scanresultcomplete{scan_request_authentication_complete=true}->
+Skip};
+
+SDScanResultAuthenticationProcess()=
+openwifi?GetScanResults{scan_result=true}->
+openwifi!HomeWifiSSID.HomeWifiBSSID.Frequency.SignalLevel.WPAAuth7.WPACiper4 ->
+openwifi?PostConnectWifi.ssid.encpwd.WPAAuth7.WPACiper4 ->
+DecryptPassword();
+openwifi!SuccessConnectRequest.password ->
+openwifi?GetEurekaInfo.IPaddressRParam.VersionRParam.SetupStateRParam ->
+openwifi!NewIPAddress.Version.NewSetupState ->
+Skip;
+
+
+CPPostRequestAuthenticationProcess()=
+openwifi!PostSetEurekaInfo.NewName.OptInStatusTrue ->
+openwifi?SuccessSetRequest{success_set_request=true} ->
+openwifi!PostSaveWifi.ImmediateTrue ->
+openwifi?SuccessSaveRequest ->
+Skip;
+
+
+SDPostRequestAuthenticationProcess()=
+openwifi?PostSetEurekaInfo.NewName.OptInStatusTrue ->
+openwifi!SuccessSetRequest ->
+if(success_set_request==false){SDPostRequestAuthenticationProcess()}
+else{
+openwifi?PostSaveWifi.ImmediateTrue ->
+openwifi!SuccessSaveRequest ->
+postrequestcomplete{post_request_authentication_complete=true}->
+Skip};
+
+
+
+
+CPMDNSAuthenticationProcess()=
+wifi!MDNSDiscoveryRequest ->
+if(receive_mdns_request==false){CPMDNSAuthenticationProcess()}
+else{wifi?MDNSDiscoveryResponse ->
+sdmdnsauthentication{mdns_authentication_complete=true}->
+Skip};
+
+
+SDMDNSAuthenticationProcess()=
+wifi?MDNSDiscoveryRequest{receive_mdns_request=true} ->
+wifi!MDNSDiscoveryResponse ->
+Skip;
+
+GSScreenAuthenticationProcess()=
+wifi?validScreenID ->
+assignscreenid{ScreenID=validScreenID}->
+screenidverify{valid_screen_id_complete=true}->
+Skip;
+
+SDScreenAuthenticationProcess()=
+wifi!ValidScreenID ->
+Skip;
+
+SDMDXAuthenticationProcess()=
+wifi?GetMdxSessionStatus ->
+wifi!ScreenID ->
+Skip;
+
+CPMDXAuthenticationProcess()=
+wifi!GetMdxSessionStatus ->
+wifi?Screenid ->
+mdxcompelete{mdx_complete=true}->
+Skip;
+
+
+CPLoungeAuthenticationProcess()=
+wifi!GetLoungToken.ScreenID ->
+Skip;
+
+GSLoungeAuthenticationProcess()=
+wifi?GetLoungToken.Screenid ->
+lounge{lounge_complete=true}->
+Skip;
+
+//24
+GSScreenControlProcess()=
+association();
+wifi!screenid.Expiration.ScreenID->
+Skip;
+
+CPScreenControlProcess()=
+wifi?receiveassociationScreenid.Expiration.receiveScreenID->
+ExecuteScreenIDControlProcess(receiveassociationScreenid);
+//25
+CPGetScreenAvailabilityControlProcess(Screenid)=
+wifi!GetScreenAvailability.Screenid->
+wifi?AvailabilityResponse.Screenid ->
+Skip;
+
+GSGetScreenAvailabilityControlProcess(Screenid)=
+wifi?GetScreenAvailability.Screenid->
+//reachedend{reached_end=true}->
+
+if (ValidScreenID==Screenid)
+{wifi!AvailabilityResponse.Screenid ->
+reachedend{reached_end=true}->
+Skip
+}
+else{CPGSGetScreenAvailabilityControlProcess(Screenid)};
+
+		
+CPGSGetScreenAvailabilityControlProcess(Screenid)= CPGetScreenAvailabilityControlProcess(Screenid) || GSGetScreenAvailabilityControlProcess(Screenid);
+CPGSPostBindControlProcess(Screenid) = CPPostBindControlProcess(Screenid) || GSPostBindControlProcess(Screenid);
+ExecuteScreenIDControlProcess(Screenid)= CPGSGetScreenAvailabilityControlProcess(Screenid) [] CPGSPostBindControlProcess(Screenid);
+
+CPPostBindControlProcess(Screenid)=
+wifi!PostBindRequest.Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList.VideoID ->
+setcurrentvideoid{CurrentVideoID=VideoID} ->
+Skip;
+ 
+GSPostBindControlProcess(Screenid)=
+wifi?[ValidScreenID==Screenid]PostBindRequest.Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList.VideoID ->
+GSCPVideoStreamControlProcess(Screenid);
+
+//28
+GSVideoStreamControlProcess(Screenid)=
+wifi!CurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+Skip;
+
+CPVideoStreamControlProcess(Screenid)=
+wifi?lCurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+if (ValidScreenID==Screenid)
+{CPGSPlaylistControlProcess(Screenid)}
+else{CPGSPostBindControlProcess(Screenid)};
+
+GSCPVideoStreamControlProcess(Screenid)= GSVideoStreamControlProcess(Screenid) || CPVideoStreamControlProcess(Screenid);
+CPGSPlaylistControlProcess(Screenid)=  CPPlaylistControlProcess(Screenid) || GSPlaylistControlProcess(Screenid);
+
+CPPlaylistControlProcess(Screenid)=
+wifi!PostBindRequest.Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList ->
+wifi?lCurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+Skip;
+
+GSPlaylistControlProcess(Screenid)=
+wifi?PostBindRequest.Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList ->
+if(ValidScreenID==Screenid)
+{wifi!CurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+endcall{end_video_reached=true}->
+Skip}
+else{CPGSPlaylistControlProcess(Screenid)};
+
+
+ChromecastProcess()=
+SDCPDiscoveryProcess();
+CPSDAuthenticationProcess();
+CPSDPostScanAuthenticationProcess();
+CPSDScanResultAuthenticationProcess();
+CPSDPostRequestAuthenticationProcess();
+CPSDMDNSAuthenticationProcess();
+SDGSScreenAuthenticationProcess();
+CPSDMDXAuthenticationProcess();
+CPGSLoungeAuthenticationProcess();
+GSCPScreenControlProcess();
+Skip;
+
+CompleteProcess =AutoGeneratedAttacker() || ChromecastProcess();
+
+#define completed sd_cp_discovery_complete && process_cp_sd_authentication_complete && post_authentication_complete && scan_request_authentication_complete && post_request_authentication_complete && mdns_authentication_complete && valid_screen_id_complete && mdx_complete && lounge_complete && end_video_reached;
+#assert CompleteProcess reaches completed;
+
+
+//Attack model 1
+// Attack from vulnerable SD at Discovery stage
+AttackSDDiscoveryProcess()=
+wifi0!AttackChromecastWiFiBeacon.AttackSSID.AttackBSSID ->
+if(attack_receive_beacon_response == false) { SDDiscoveryProcess() } 
+else 
+{wifi0?AttackSSID.AttackOpenSystemAuthenticationRequest ->
+wifi0!AttackAssociationResponse ->
+Skip};
+
+AttackCPDiscoveryProcess() =
+wifi0?AttackChromecastWiFiBeacon.attack_ssid.attack_bssid{attack_receive_beacon_response=true} ->
+wifi0!attack_ssid.AttackOpenSystemAuthenticationRequest ->
+wifi0?AttackAssociationResponse ->
+sddiscoverycomplete{attack_sd_cp_discovery_complete = true} ->
+Skip;
+
+AttackatDiscovery() = AttackSDDiscoveryProcess() || AttackCPDiscoveryProcess();
+AttackfromotherSD= SDDiscoveryProcess() || CPDiscoveryProcess() || AttackatDiscovery();
+
+#define attackeratdiscovery attack_sd_cp_discovery_complete;
+#assert AttackfromotherSD reaches attackeratdiscovery;
+
+
+//Attack model 2
+//Misuse of MDNSDiscoveryRequest.
+AttackCPMDNSAuthenticationProcess()=
+wifi!attackMDNSDiscoveryRequest ->
+if(attack_receive_mdns_request==false){AttackCPMDNSAuthenticationProcess()}
+else{
+	wifi?attackMDNSDiscoveryResponse ->
+	attack1{attack_received_dns_response=true} -> 
+	Skip
+};
+
+AttackSDMDNSAuthenticationProcess()=
+wifi?attackMDNSDiscoveryRequest{attack_receive_mdns_request=true} ->
+wifi!attackMDNSDiscoveryResponse ->
+Skip;
+
+AttackCPSDMDNSAuthenticationProcess=AttackSDMDNSAuthenticationProcess() || AttackCPMDNSAuthenticationProcess();
+attacksendingwrongmdnsresponse=AttackCPSDMDNSAuthenticationProcess || CPSDMDNSAuthenticationProcess();
+
+#define attackatmdnsauthentication attack_received_dns_response;
+#assert attacksendingwrongmdnsresponse reaches attackatmdnsauthentication;
+
+// Attack model 3
+//Sharing ScreenID to SD from malware CP
+AttackSDMDXAuthenticationProcess()=
+wifi?GetAttackMdxSessionStatus ->
+wifi!AttackScreenID ->
+Skip;
+
+AttackCPMDXAuthenticationProcess()=
+wifi!GetAttackMdxSessionStatus ->
+wifi?temp_attacker_screen_id ->
+set_valid_screen_id{AttackValidScreenID=temp_attacker_screen_id;}->
+set_screen_id{AttackScreenID = temp_attacker_screen_id; } ->
+attack2{attack_received_screen = true; } ->
+Skip;
+
+AttackSDCPMDXAuthenticationProcess=AttackSDMDXAuthenticationProcess() || AttackCPMDXAuthenticationProcess();
+malwarescreenidfromCP= AttackSDCPMDXAuthenticationProcess|| SDMDXAuthenticationProcess() || CPMDXAuthenticationProcess();
+
+#define screenidfrommalwareCP attack_received_screen;
+#assert malwarescreenidfromCP reaches screenidfrommalwareCP;
+
+//Attack model 4
+// Attack model which updated Video ID from malware CP
+
+//attack association screenid
+//24
+AttackGSScreenControlProcess()=
+attack_association();
+wifi!attacker_screen_id.Expiration.AttackScreenID->
+AttackCPGSPostBindControlProcess(attacker_screen_id);
+
+
+AttackCPScreenControlProcess()=
+wifi?receive_attack_association_Screenid.Expiration.receiveScreenID->
+Skip;
+
+AttackCPGSPostBindControlProcess(Attack_Screenid) = AttackGSPostBindControlProcess(Attack_Screenid) || AttackCPPostBindControlProcess(Attack_Screenid) ;
+
+//VideoID from malware CP
+AttackCPPostBindControlProcess(Attack_Screenid)=
+wifi!PostBindRequest.Attack_Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList.AttackVideoID ->
+setcurrentvideoid{AttackCurrentVideoID=AttackVideoID} ->
+//attackervideoid{current_attacker_video_id_updated=true}->
+Skip;
+ 
+AttackGSPostBindControlProcess(Attack_Screenid)=
+wifi?[AttackValidScreenID==Attack_Screenid]PostBindRequest.Attack_Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList.AttackVideoID ->
+attackervideoid{current_attacker_video_id_updated=true}->
+AttackGSCPVideoStreamControlProcess(Attack_Screenid);
+
+AttackGSCPScreenControlProcess()= AttackGSScreenControlProcess() || AttackCPScreenControlProcess();
+attackedscreenid= GSCPScreenControlProcess() || AttackGSCPScreenControlProcess();
+#define videoidfrommalwarecp current_attacker_video_id_updated;
+#assert attackedscreenid reaches videoidfrommalwarecp;
+
+//Attack model 5
+//CurrentVideoID has been updated from malware CP
+
+AttackGSCPVideoStreamControlProcess(Attack_Screenid)= AttackGSVideoStreamControlProcess(Attack_Screenid) || AttackCPVideoStreamControlProcess(Attack_Screenid);
+
+AttackGSVideoStreamControlProcess(Attack_Screenid)=
+wifi!AttackCurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+Skip;
+
+AttackCPVideoStreamControlProcess(Attack_Screenid)=
+wifi?lCurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+if (AttackValidScreenID==Attack_Screenid)
+{AttackCPGSPlaylistControlProcess(Attack_Screenid)}
+else{AttackCPGSPostBindControlProcess(Attack_Screenid)};
+
+AttackCPGSPlaylistControlProcess(Attack_Screenid)=  AttackCPPlaylistControlProcess(Attack_Screenid) || AttackGSPlaylistControlProcess(Attack_Screenid);
+
+AttackCPPlaylistControlProcess(Attack_Screenid)=
+wifi!PostBindRequest.Attack_Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList ->
+wifi?lCurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+Skip;
+
+AttackGSPlaylistControlProcess(Attack_Screenid)=
+wifi?PostBindRequest.Attack_Screenid.Device.ID.ControlPointName.AppName.MethodSetPlayList ->
+if(AttackValidScreenID==Attack_Screenid)
+{wifi!AttackCurrentVideoID.SID.GsessionID.LoungStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->
+attackendcall{attack_current_video_reached=true}->
+Skip}
+else{AttackCPGSPlaylistControlProcess(Attack_Screenid)};
+
+#define currentvideoidchange attack_current_video_reached;
+#assert attackedscreenid reaches currentvideoidchange;
+
+
+var<Knowledge> AutoGeneratedAttackerKnowledge;
+AutoGeneratedAttacker()= wifi?msg1{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []wifi?msg1.msg2->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedAttacker()
+           []wifi?msg1.msg2.msg3->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedAttacker()
+           []openwifi?msg1{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []openwifi?msg1.msg2->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedAttacker()
+           []openwifi?msg1.msg2.msg3->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedAttacker()
+           []wifi0?msg1{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedAttacker()
+           []wifi0?msg1.msg2->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedAttacker()
+           []wifi0?msg1.msg2.msg3->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnowledge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedAttacker()
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastWiFiBeacon)==true){wifi!ChromecastWiFiBeacon->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackChromecastWiFiBeacon)==true){wifi!AttackChromecastWiFiBeacon->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSID)==true){wifi!SSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSID)==true){wifi!BSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackSSID)==true){wifi!AttackSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackBSSID)==true){wifi!AttackBSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackOpenSystemAuthenticationRequest)==true){wifi!AttackOpenSystemAuthenticationRequest->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OpenSystemAuthenticationRequest)==true){wifi!OpenSystemAuthenticationRequest->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows( AttackAssociationResponse)==true){wifi! AttackAssociationResponse->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastWiFiBeacon)==true){openwifi!ChromecastWiFiBeacon->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackChromecastWiFiBeacon)==true){openwifi!AttackChromecastWiFiBeacon->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSID)==true){openwifi!SSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSID)==true){openwifi!BSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackSSID)==true){openwifi!AttackSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackBSSID)==true){openwifi!AttackBSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackOpenSystemAuthenticationRequest)==true){openwifi!AttackOpenSystemAuthenticationRequest->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OpenSystemAuthenticationRequest)==true){openwifi!OpenSystemAuthenticationRequest->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows( AttackAssociationResponse)==true){openwifi! AttackAssociationResponse->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastWiFiBeacon)==true){wifi0!ChromecastWiFiBeacon->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackChromecastWiFiBeacon)==true){wifi0!AttackChromecastWiFiBeacon->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSID)==true){wifi0!SSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSID)==true){wifi0!BSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackSSID)==true){wifi0!AttackSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackBSSID)==true){wifi0!AttackBSSID->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackOpenSystemAuthenticationRequest)==true){wifi0!AttackOpenSystemAuthenticationRequest->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OpenSystemAuthenticationRequest)==true){wifi0!OpenSystemAuthenticationRequest->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows( AttackAssociationResponse)==true){wifi0! AttackAssociationResponse->AutoGeneratedAttacker()}else{AutoGeneratedAttacker()};

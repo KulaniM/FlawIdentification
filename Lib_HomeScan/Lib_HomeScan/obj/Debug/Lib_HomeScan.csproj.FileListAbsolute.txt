@@ -1,0 +1,7 @@
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\bin\Debug\Lib_HomeScan.dll
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\bin\Debug\Lib_HomeScan.pdb
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\obj\Debug\Lib_HomeScan.csproj.CoreCompileInputs.cache
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\obj\Debug\Lib_HomeScan.csproj.CopyComplete
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\obj\Debug\Lib_HomeScan.dll
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\obj\Debug\Lib_HomeScan.pdb
+C:\Users\HP-PC\source\repos\Lib_HomeScan\Lib_HomeScan\obj\Debug\Lib_HomeScan.csprojAssemblyReference.cache

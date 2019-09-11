@@ -1,0 +1,404 @@
+﻿#import "Lib_HomeScan";
+//=======================Model Details===========================
+enum{BeaconRequest, PanID, HubID, AssoPermit,
+DeviceID, UPnPMsearchRequest, ControlPointIP, ServerName, HubIP,
+SearchLightRequest, ScanRequest, ScanResponse, LinkNetworkJoinRequest, LinkIdentifyRequest, LinkScanRequest, 
+LinkNetworkJoinResponse, LinkScanResponse, ACK, RequestSuccess, JoinNearestDeviceRequest, NetworkJoinRequest, 
+NetworkJoinResponse, IdentifyRequest,LinkButtonTrue, DeleteLightRequest, GetInfoRequest, RequestLightResult, ControlCmdSuccess, AdminSuccess,
+Configs, Lights, Whitelist, LightNo, LightName, EncryptedControlCommand, DeleteUserIdRequest, ControlCmd, AttackerControlPointIP, AttackerHubID,
+AttackerHubIP
+};
+
+channel zigbee 0;
+channel wifi 0;
+channel internal 0;
+
+var cp_hs_discovery_complete = false;
+var cp_hs_authentication_complete = false;
+var cp_hs_control_complete = false;
+var zfe_sd_discovery_complete = false;
+var zfe_sd_authentication_complete = false;
+var zfe_sd_control_complete = false;
+var receive_beacon_response = false;
+var receive_upnpsearch_response = false;
+var control_command_success = false;
+var x = 0;
+var hashy = 0;
+
+var cp_attack_hub_compromised = false;  
+var hijacking_complete = false;
+var attacker_cp_authenticated = false;
+var uncontrolled_cp_auth_attack_complete = false;
+var attacker_hub_authenticated_with_sd = false;
+var deleted_benigncp_success = false;
+var deleted_sd_success = false;
+
+//When user swithces the SD on, it sends a BeaconRequest and waits for BeaconPacket(PanID, HubID, AssoPermit) in response
+switchOnSmartDevice = SDSendBeaconRequest() || SDReceiveBeaconResponse() || SDScanBeaconRequest() ;
+
+SDSendBeaconRequest() =
+	zigbee!BeaconRequest->
+	if(receive_beacon_response == false) { SDSendBeaconRequest() } else {Skip};
+	
+SDReceiveBeaconResponse() =
+	zigbee?panid.hubid.AssoPermit{receive_beacon_response = true} ->
+	SDSendInterPANBroadcast(panid);
+	
+SDSendInterPANBroadcast(panid) =
+	zigbee!panid.DeviceID->	
+	if(zfe_sd_discovery_complete == DeviceID) { Skip } else { SDSendInterPANBroadcast(panid) };
+	
+ZFEScanBeaconRequest() =
+	zigbee?BeaconRequest->
+	ZFESendBeaconPacket()||ZFEReceiveDeviceID();
+
+ZFESendBeaconPacket() =	
+	zigbee!PanID.HubID.AssoPermit ->
+	if(receive_beacon_response == false) { ZFESendBeaconPacket() } else {Skip};
+	
+ZFEReceiveDeviceID() =
+	zigbee?PanID.deviceid ->                                                                                                                                         
+	zigbeediscoverycomplete{zfe_sd_discovery_complete = deviceid}->
+	SDZFEAuth;
+	
+//ZFE scans for SD - Step 4 & 5
+	
+ZFESendBeaconRequest() =
+	zigbee!BeaconRequest ->
+	if(zfe_sd_discovery_complete == DeviceID) { Skip } else { ZFESendBeaconRequest() };
+	
+ZFEScanBeaconResponse() =
+	zigbee?PanID.deviceid.AssoPermit->
+	zigbeediscoverycomplete{zfe_sd_discovery_complete = deviceid}->
+	ZFESDAuth;
+
+SDScanBeaconRequest() =
+	zigbee?BeaconRequest ->
+	zigbee!PanID.DeviceID.AssoPermit ->
+	Skip;
+	
+userInitiatesHubSearch = DiscoverHubFromCP() || CPReceiveSearchResponse();
+
+DiscoverHubFromCP() =
+	wifi!UPnPMsearchRequest.ControlPointIP ->
+	if(receive_upnpsearch_response == false) { DiscoverHubFromCP() } else {Skip};
+	
+CPReceiveSearchResponse() =
+	wifi?ControlPointIP.serverName.hubip.hubid{receive_upnpsearch_response = true}  ->
+	wifidiscoverycomplete{cp_hs_discovery_complete = hubid}->
+	CPHSAuth;
+	
+HttpServerScanCP() = 
+	wifi?UPnPMsearchRequest.cpip ->
+	wifi!cpip.ServerName.HubIP.HubID ->
+	HttpServerScanCP();
+	
+switchOnHub = ZFEScanBeaconRequest() || ZFESendBeaconRequest() || ZFEScanBeaconResponse() || HttpServerScanCP();
+
+Discovery = switchOnSmartDevice || switchOnHub || userInitiatesHubSearch;
+
+#define discovered zfe_sd_discovery_complete == DeviceID && cp_hs_discovery_complete == HubID;
+#assert Discovery reaches discovered;
+
+//Authentication Stages
+
+//ZFE broadcasts ScanRequest to find all smart devices in PAN network
+
+ZFEScanForSmartDevices() =
+	zigbee!PanID.ScanRequest ->
+	zigbee?PanID.HubID.ScanResponse ->
+	zigbee!DeviceID.IdentifyRequest ->
+	zigbee!DeviceID.PanID.NetworkJoinRequest ->
+	zigbee?PanID.HubID.NetworkJoinResponse ->
+	zigbeeauthenticationcomplete{zfe_sd_authentication_complete = true} ->
+	Skip;
+
+//SmartDevice	
+SDReceiveScanRequests() =
+	zigbee?PanID.ScanRequest ->
+	zigbee!PanID.HubID.ScanResponse ->
+	zigbee?DeviceID.IdentifyRequest ->
+	execute_IdentifyRequest ->
+	zigbee?DeviceID.PanID.NetworkJoinRequest ->
+	zigbee!PanID.HubID.NetworkJoinResponse ->
+	Skip;
+
+//Step 20
+ZFESendLinkScanRequest() =
+	zigbee!PanID.HubID.LinkScanRequest ->
+	zigbee?HubID.PanID.LinkScanResponse ->
+	zigbee!DeviceID.LinkIdentifyRequest ->
+	zigbee!DeviceID.PanID.LinkNetworkJoinRequest ->
+	zigbee?HubID.PanID.LinkNetworkJoinResponse ->
+	zigbeeauthenticationcomplete{zfe_sd_authentication_complete = true} ->
+	Skip;
+
+SDScanLinkScanRequests() =
+	zigbee?PanID.hubid.LinkScanRequest ->
+	zigbee!hubid.PanID.LinkScanResponse ->
+	zigbee?DeviceID.LinkIdentifyRequest ->
+	execute_LinkIdentifyRequest ->
+	zigbee?DeviceID.PanID.LinkNetworkJoinRequest ->
+	zigbee!hubid.PanID.LinkNetworkJoinResponse ->
+	SDScanLinkScanRequests();
+
+CPStartAuthentication() =
+	wifi!HubIP.x++ ->
+	wifi?ControlPointIP.hashx ->
+	CPSendAnyRequest(hashx);
+	
+CPSendAnyRequest(hashx) = CPAuthentication(hashx) [] CPControl(hashx);
+CPAuthentication(hashx) = CPSendSearchLightRequest(hashx) [] CPInitiateJoinRequest(hashx);
+CPControl(hashx) = CPSendsRequestLightResult(hashx) [] CPSendsGetInfoRequest(hashx);
+
+HSScanAuthRequests() = 
+	wifi?HubIP.y ->
+	executeCommand_LinkBTrue{hashy = y+1} ->
+	wifi!ControlPointIP.hashy->
+	executeCommand_LinkBFalse ->
+	wifi?[hash==hashy]hash.HubIP.reqfromcp ->
+	internal!HubIP.hashy.reqfromcp ->
+	wifi!ControlPointIP.RequestSuccess ->
+	HSScanAuthRequests();
+	
+//Step 11
+
+CPSendSearchLightRequest(hash_x) =
+	wifi!HubIP.hash_x.SearchLightRequest ->
+	wifi?ControlPointIP.RequestSuccess ->
+	wifiauthenticationcomplete{cp_hs_authentication_complete = true}->
+	Skip;
+
+//Step 18	
+CPInitiateJoinRequest(hash_x) =
+	wifi!hash_x.HubIP.JoinNearestDeviceRequest ->
+	wifi?ControlPointIP.RequestSuccess ->
+	wifiauthenticationcomplete{cp_hs_authentication_complete = true}->
+	Skip;
+	
+ZFEScanInternalHSMessages() =
+	internal?HubIP.hash_val.cprequest ->
+	ZFEResolveRequest(cprequest);
+	
+ZFEResolveRequest(cprequest) =	
+	if(cprequest == JoinNearestDeviceRequest){
+		ZFESendLinkScanRequest()
+	}
+	else if(cprequest == SearchLightRequest){
+		ZFEScanForSmartDevices()
+	};
+	
+CPHSAuth = CPStartAuthentication() || HSScanAuthRequests() || ZFEScanInternalHSMessages();
+ZFESDAuth = ZFESendLinkScanRequest() || SDScanLinkScanRequests();
+SDZFEAuth = ZFEScanForSmartDevices()||SDReceiveScanRequests();
+
+Authentication = ZFESDAuth || SDZFEAuth || CPHSAuth;
+	
+#define authenticated zfe_sd_authentication_complete && cp_hs_authentication_complete;
+#assert Authentication reaches authenticated;
+
+
+
+//step 25
+CPSendsRequestLightResult(hash_val) =
+	wifi!HubIP.hash_val.RequestLightResult ->
+	wifi?ControlPointIP.LightNo.LightName{control_command_success = true}->
+	CPSendsRequestLightResult(hash_val) [] CPSendsControlCmd(hash_val);
+	
+//step 27
+CPSendsGetInfoRequest(hash_val) =
+	wifi!HubIP.hash_val.GetInfoRequest ->
+	wifi?ControlPointIP.Configs.Lights.Whitelist{control_command_success = true}->
+	CPSendsGetInfoRequest(hash_val) [] CPSendsDeleteLightRequest(hash_val)[] CPSendsDeleteUserIdRequest(hash_val) [] CPSendsLinkButtonTrue(hash_val);
+	
+HSScansForCPCommands() =
+	wifi?hubIP.hash.cpcommand ->
+	ExecuteCPCommand(cpcommand);
+	
+ExecuteCPCommand(cpcommand) =
+	case {
+		(cpcommand == RequestLightResult): HSSendRequestLightResult()
+		(cpcommand == GetInfoRequest): HSSendGetInfoResponse()
+		(cpcommand == DeleteLightRequest): HSSendAdminSuccessResponse()
+		(cpcommand == DeleteUserIdRequest): HSSendAdminSuccessResponse()
+		(cpcommand == LinkButtonTrue): HSSendLinkBTrueResponse()
+		(cpcommand == ControlCmd): HSExecuteControlCmd(cpcommand)
+		default : Skip
+	};
+
+HSSendRequestLightResult() =
+	wifi!ControlPointIP.LightNo.LightName ->
+	HSScansForCPCommands();
+	
+HSSendGetInfoResponse() =
+	wifi!ControlPointIP.Configs.Lights.Whitelist ->
+	HSScansForCPCommands();
+	
+HSSendLinkBTrueResponse() =
+	executeCommand_LinkBTrue ->
+	HSSendAdminSuccessResponse();
+	
+HSSendAdminSuccessResponse() =
+	wifi!ControlPointIP.AdminSuccess ->
+	HSScansForCPCommands();
+	
+HSExecuteControlCmd(cpcommand) =
+	internal!cpcommand ->
+	internal?ACK ->
+	wifi!ControlPointIP.ControlCmdSuccess ->
+	HSScansForCPCommands();
+	
+ZFEExecuteControlCommands() =
+	internal?cpcommand ->
+	zigbee!DeviceID.PanID.EncryptedControlCommand ->
+	zigbee?HubIP.ACK ->
+	internal!ACK ->
+	Skip;
+	
+SDExecuteControlCommands() =
+	zigbee?DeviceID.PanID.EncryptedControlCommand ->
+	executeControlCommand ->
+	zigbee!HubIP.ACK ->
+	Skip;
+	
+//step 29
+
+CPSendsDeleteLightRequest(hash_val) =
+	wifi!HubIP.hash_val.DeleteLightRequest ->
+	wifi?ControlPointIP.AdminSuccess{control_command_success = true} ->
+	CPSendsDeleteLightRequest(hash_val) [] Skip;
+	
+//step 31
+
+CPSendsDeleteUserIdRequest(hash_val) =
+	wifi!HubIP.hash_val.DeleteUserIdRequest ->
+	wifi?ControlPointIP.AdminSuccess{control_command_success = true} ->
+	CPSendsDeleteUserIdRequest(hash_val) [] Skip;
+	
+//step 33
+
+CPSendsLinkButtonTrue(hash_val) =
+	wifi!HubIP.hash_val.LinkButtonTrue ->
+	wifi?ControlPointIP.AdminSuccess{control_command_success = true} ->
+	CPSendsLinkButtonTrue(hash_val) [] Skip;
+	
+//Step 35
+
+CPSendsControlCmd(hash_val) =
+	wifi!HubIP.hash_val.ControlCmd ->
+	wifi?ControlPointIP.ControlCmdSuccess{control_command_success = true} ->
+	CPSendsControlCmd(hash_val) [] Skip;
+
+ControlExecution = HSScansForCPCommands() || CPControl(hashy);	
+
+
+	
+#define commandsuccess control_command_success;
+#assert ControlExecution reaches commandsuccess;
+
+//attack models
+//1. Misuse of insecure protocols at discovery over Wifi - Malicious CP Discovers Benign HS
+
+attackerCPInitiatesHubSearch = DiscoverHubFromAttackerCP() || AttackerCPReceiveSearchResponse() ;
+
+DiscoverHubFromAttackerCP() =
+	wifi!UPnPMsearchRequest.AttackerControlPointIP ->
+	if(cp_attack_hub_compromised == false) { DiscoverHubFromAttackerCP() } else {Skip};
+	
+AttackerCPReceiveSearchResponse() =
+	wifi?AttackerControlPointIP.serverName.hubip.hubid ->
+	controlpointattackcomplete{cp_attack_hub_compromised = true}->
+	Skip;
+	
+InsecureUPnPProtocolAttack = attackerCPInitiatesHubSearch || HttpServerScanCP()|| userInitiatesHubSearch;
+
+#define attackercpdiscovershub cp_attack_hub_compromised;
+#assert InsecureUPnPProtocolAttack reaches attackercpdiscovershub;
+
+
+// 2. Misuse of insecure broadcast at discovery over Zigbee - Malicious Hub Discovers Benign SD
+	
+AttackerHubScanBeaconRequest() =
+	zigbee?BeaconRequest->
+	AttackerHubSendBeaconPacket()||AttackerHubReceiveDeviceID();
+
+AttackerHubSendBeaconPacket() =	
+	zigbee!PanID.AttackerHubID.AssoPermit ->
+	if(receive_beacon_response == false) { AttackerHubSendBeaconPacket() } else {Skip};
+	
+AttackerHubReceiveDeviceID() =
+	zigbee?PanID.deviceid ->                                                                                                                                         
+	connectionhijackingattackcomplete{zfe_sd_discovery_complete = deviceid} ->
+	Skip;
+	
+InsecureBroadcastOverZigbee = SDSendBeaconRequest() || SDReceiveBeaconResponse() || ZFEScanBeaconRequest() || AttackerHubScanBeaconRequest();
+
+#define attackerhubdiscoverssd zfe_sd_discovery_complete == DeviceID;
+#assert InsecureBroadcastOverZigbee reaches attackerhubdiscoverssd;
+
+
+// 3. Flaws in authentication protocol over Wifi - Malicious CP Authentication to Benign HS
+
+AttackerCPStartAuthentication() =
+	wifi!HubIP.x++ ->
+	wifi?attackerControlPointIP.hashx -> 
+	attackerautheticationcomplete{attacker_cp_authenticated = true} ->
+	Skip;
+	
+AttackerCPAuthentication = CPStartAuthentication() || AttackerCPStartAuthentication() || HSScanAuthRequests();
+
+#define attackercpauthenticateshub attacker_cp_authenticated;
+#assert AttackerCPAuthentication reaches attackercpauthenticateshub;
+
+// 4. Flaws in authentication protocol over Zigbee - Malicious Hub Authentication to Benign SD
+AttackerHubLinkScanRequest() =
+	zigbee!PanID.AttackerHubID.LinkScanRequest ->
+	zigbee?AttackerHubID.PanID.LinkScanResponse ->
+	zigbee!DeviceID.LinkIdentifyRequest ->
+	zigbee!DeviceID.PanID.LinkNetworkJoinRequest ->
+	zigbee?AttackerHubID.PanID.LinkNetworkJoinResponse ->
+	attackerhubauthenticateswithsd{attacker_hub_authenticated_with_sd = true} ->
+	Skip;
+
+AttackerHubAuthentication = AttackerHubLinkScanRequest() || ZFESendLinkScanRequest() || SDScanLinkScanRequests();
+
+#define attackerhubauthenticatessd attacker_hub_authenticated_with_sd;
+#assert AttackerHubAuthentication reaches attackerhubauthenticatessd;
+
+// 5. Uncontrolled CP Authentication over Wifi
+
+AuthenticatedAttackerCPLinkBTrue()  =
+	wifi!HubIP.hashy.LinkButtonTrue ->
+	wifi?attackerControlPointIP.AdminSuccess ->
+	uncontrolledcpauthattackcomplete{uncontrolled_cp_auth_attack_complete = true} ->
+	Skip;
+	
+UncontrolledCPAuthentication = CPSendsLinkButtonTrue(hashy) || AuthenticatedAttackerCPLinkBTrue() || HSScansForCPCommands();
+
+#define uncontrolledcpauthattackedhub uncontrolled_cp_auth_attack_complete;
+#assert UncontrolledCPAuthentication reaches uncontrolledcpauthattackedhub;
+
+
+//6. Denial of service against the HS
+AttackerCPSendsDeleteUserIdRequest(hash_val) =
+	wifi!HubIP.hash_val.DeleteUserIdRequest ->
+	wifi?attackerControlPointIP.AdminSuccess{deleted_benigncp_success = true} ->
+	AttackerCPSendsDeleteUserIdRequest(hash_val);
+
+DenialOfServiceAgainstHS = AttackerCPSendsDeleteUserIdRequest(hashy) <> CPSendsDeleteUserIdRequest(hashy) || HSScansForCPCommands();
+
+#define denialOfServiceHS deleted_benigncp_success;
+#assert DenialOfServiceAgainstHS reaches denialOfServiceHS;
+
+//7. Denial of service against the SD
+AttackerCPSendsDeleteLightRequest(hash_val) =
+	wifi!HubIP.hash_val.DeleteLightRequest ->
+	wifi?attackerControlPointIP.AdminSuccess{deleted_sd_success = true} ->
+	AttackerCPSendsDeleteLightRequest(hash_val);
+
+DenialOfServiceAgainstSD = AttackerCPSendsDeleteLightRequest(hashy) <> CPSendsDeleteLightRequest(hashy) || HSScansForCPCommands();
+
+#define denialOfServiceSD deleted_sd_success;
+#assert DenialOfServiceAgainstSD reaches denialOfServiceSD;
+
+//System = Discovery()-> Authentication()-> ControlExecution();
