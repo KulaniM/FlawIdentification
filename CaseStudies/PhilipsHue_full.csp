@@ -1,0 +1,743 @@
+#import "Lib_HomeScan";
+channel zigbee 0;
+channel wifi 0;
+channel attackerBuffer 3;
+enum {BeaconRequest, PanID, HubID, DeviceID, AssoPermit,UPnPMsearchRequest, CPIP, AttackerIP, ServerName, HubIP,SearchLightRequest, RequestSuccess, ScanRequest, ScanResponse,IdentifyRequest, NetworkJoinRequest, NetworkJoinResponse, LinkNetworkJoinResponse,JoinNearestDeviceRequest, LinkScanRequest, LinkScanResponse,LinkIdentifyRequest,LinkNetworkJoinRequest,RequestLightResult, LightNo, LightName, GetInfoRequest,Configs, Lights, Whitelist, DeleteLightRequest,AdminSuccess, DeleteUserIDRequest, LinkButtonTrue,Controlcmd, EncryptedControlcmd, ACK, ControlCmdSuccess,CP, HS, ZFE, SD, Nobody, cp_nonce, cp_hashed_nonce,Attacker_nonce, Attacker_hashed_nonce, AttackerHubID,AttackerDeviceID, AttackerHttpReplay};
+var cPWhitelisted = false;
+var attackerWhitelisted = false;
+var linkButton = false;
+var Network_HubID = Nobody;
+var New_DeviceID = Nobody;
+var Bridge_HubIP = Nobody;
+var sDJoinedZigbeeNetwork = false;
+var attackerJoinedZigbeeNetwork = false;
+var attackerAuth = false;
+var attackerCmdControl = false;
+var attackerAdminControl = false;
+var sDHijacked = false;
+var controlModified = false;
+SD_Proc() = SD_Discovery();
+HS_Proc() = HS_Discovery();
+ZFE_Proc() = ZFE_Discovery();
+CP_Proc() = CP_Discovery();
+SD_Discovery() =SD_NetworkDiscovery() []SD_DeviceDiscovery();
+ZFE_Discovery() =ZFE_NetworkDiscovery() []ZFE_DeviceDiscovery();
+SD_NetworkDiscovery() =zigbee!BeaconRequest ->zigbee?PanID.hub_id.AssoPermit ->NetworkHubDiscovered{Network_HubID = hub_id} ->zigbee!PanID.DeviceID ->SD_JoinNetwork();
+ZFE_NetworkDiscovery() =zigbee?BeaconRequest ->zigbee!PanID.HubID.AssoPermit ->zigbee?PanID.device_id ->NewDeviceDiscovered{New_DeviceID = device_id} ->ZFE_JoinNetwork();
+SD_DeviceDiscovery() =zigbee?BeaconRequest.hub_id ->NetworkHubDiscovered{Network_HubID = hub_id} ->zigbee!PanID.DeviceID.AssoPermit ->SD_JoinDevice();
+ZFE_DeviceDiscovery() =zigbee!BeaconRequest.HubID ->zigbee?PanID.device_id.AssoPermit ->NewDeviceDiscovered{New_DeviceID = device_id} ->ZFE_JoinDevice();
+CP_Discovery() =wifi!UPnPMsearchRequest.CPIP ->wifi?CPIP.ServerName.hub_ip.hub_id ->ServerDiscovered{Bridge_HubIP = hub_ip} ->CP_Auth();
+HS_Discovery() =wifi?UPnPMsearchRequest.cp_ip ->wifi!cp_ip.ServerName.HubIP.HubID ->HS_Auth();
+CP_Auth() =newnonce.cp_nonce ->wifi!Bridge_HubIP.cp_nonce ->wifi?CPIP.hash_x ->CP_SendRequest(hash_x);
+HS_Auth() =wifi?HubIP.x ->HS_AuthFromNonce(x);
+HS_AuthFromNonce(x) =ifa(x == cp_nonce){executeCommand{linkButton = true} ->wifi!CPIP.cp_hashed_nonce ->CPConnected{cPWhitelisted = true} ->executeCommand{linkButton = false} ->HS_ReceiveRequest()}else{executeCommand{linkButton = true} ->wifi!AttackerIP.Attacker_hashed_nonce ->CPConnected{attackerWhitelisted = true} ->executeCommand{linkButton = false} ->HS_ReceiveRequest()};
+CP_SendSearchLightRequest(hash_x) =wifi!Bridge_HubIP.hash_x.SearchLightRequest ->wifi?CPIP.RequestSuccess ->CP_SendRequest(hash_x);
+HS_ReceiveSearchLightRequest() =wifi?HubIP.x.SearchLightRequest ->HS_SearchLightResponse();
+ZFE_JoinNetwork() =zigbee!ScanRequest.PanID ->zigbee?HubID.PanID.ScanResponse ->zigbee!New_DeviceID.IdentifyRequest ->zigbee!New_DeviceID.PanID.NetworkJoinRequest ->zigbee?HubID.PanID.NetworkJoinResponse ->HS_ReceiveRequest();
+SD_JoinNetwork() =zigbee?ScanRequest.PanID ->zigbee!Network_HubID.PanID.ScanResponse ->zigbee?DeviceID.IdentifyRequest ->executeCommand.IdentifyRequest ->zigbee?DeviceID.PanID.NetworkJoinRequest ->zigbee!Network_HubID.PanID.NetworkJoinResponse ->JoinToNetwork{sDJoinedZigbeeNetwork = true} ->SD_TouchLink();
+CP_SendJoinNearestDeviceRequest(hash_x) =wifi!Bridge_HubIP.hash_x.JoinNearestDeviceRequest ->wifi?CPIP.RequestSuccess->CP_SendRequest(hash_x);
+HS_ReceiveJoinNearestDeviceRequest() =wifi?HubIP.x.JoinNearestDeviceRequest ->HS_JoinNearestDeviceResponse();
+ZFE_JoinDevice() =zigbee!LinkScanRequest.PanID ->zigbee?HubID.PanID.LinkScanResponse ->zigbee!New_DeviceID.LinkIdentifyRequest ->zigbee!New_DeviceID.PanID.LinkNetworkJoinRequest ->zigbee?HubID.PanID.LinkNetworkJoinResponse ->HS_ReceiveRequest();
+SD_JoinDevice() =zigbee?LinkScanRequest.PanID ->zigbee!Network_HubID.PanID.LinkScanResponse ->zigbee?DeviceID.LinkIdentifyRequest ->executeCommand.LinkIdentifyRequest ->zigbee?DeviceID.PanID.LinkNetworkJoinRequest ->zigbee!Network_HubID.PanID.LinkNetworkJoinResponse ->JoinToNetwork{sDJoinedZigbeeNetwork = true} ->SD_TouchLink();
+SD_TouchLink() = SD_DeviceDiscovery() [] SD_ReceiveRequest();
+HS_SearchLightResponse() =ifa(cPWhitelisted){wifi!CPIP.RequestSuccess ->ZFE_JoinNetwork()}[] ifa(attackerWhitelisted){wifi!AttackerIP.RequestSuccess ->ZFE_JoinNetwork()}[] HS_ReceiveRequest();
+HS_JoinNearestDeviceResponse() =ifa(cPWhitelisted){wifi!CPIP.RequestSuccess ->ZFE_JoinDevice()}[] ifa(attackerWhitelisted){wifi!AttackerIP.RequestSuccess ->ZFE_JoinDevice()}[] HS_ReceiveRequest();
+CP_SendRequest(hash_x) =CP_SendSearchLightRequest(hash_x) []CP_SendJoinNearestDeviceRequest(hash_x) []CP_RequestLightResult(hash_x) []CP_GetInfoRequest(hash_x);
+HS_ReceiveRequest() =HS_ReceiveSearchLightRequest() []HS_ReceiveJoinNearestDeviceRequest() []HS_RequestLightResult() []HS_GetInfoRequest();
+SD_ReceiveRequest() =SD_JoinNetwork() []SD_JoinDevice() []SD_Controlcmd();
+CP_SendAdminControlRequest(hash_x) =CP_GetInfoRequest(hash_x) []CP_DeleteLightRequest(hash_x) []CP_DeleteUserIDRequest(hash_x) []CP_LinkButtonTrue(hash_x) []CP_SendRequest(hash_x);
+HS_ReceiveAdminControlRequest() =HS_GetInfoRequest() []HS_DeleteLightRequest() []HS_DeleteUserIDRequest() []HS_LinkButtonTrue() []HS_ReceiveRequest();
+CP_SendControlRequest(hash_x) =CP_RequestLightResult(hash_x) []CP_Controlcmd(hash_x) []CP_SendRequest(hash_x);
+HS_ReceiveControlRequest() =HS_RequestLightResult() []HS_Controlcmd() []HS_ReceiveRequest();
+CP_RequestLightResult(hash_x) =wifi!Bridge_HubIP.hash_x.RequestLightResult ->wifi?CPIP.LightNo.LightName ->CP_SendControlRequest(hash_x);
+HS_RequestLightResult() =wifi?HubIP.x.RequestLightResult ->HS_LightResultResponse();
+CP_GetInfoRequest(hash_x) =wifi!Bridge_HubIP.hash_x.GetInfoRequest ->wifi?CPIP.Configs.Lights.Whitelist ->CP_SendAdminControlRequest(hash_x);
+HS_GetInfoRequest() =wifi?HubIP.x.GetInfoRequest ->HS_GetInfoResponse();
+CP_DeleteLightRequest(hash_x) =wifi!Bridge_HubIP.hash_x.DeleteLightRequest ->wifi?CPIP.AdminSuccess ->CP_SendAdminControlRequest(hash_x);
+HS_DeleteLightRequest() =wifi?HubIP.x.DeleteLightRequest ->HS_AdminSuccessResponse();
+CP_DeleteUserIDRequest(hash_x) =wifi!Bridge_HubIP.hash_x.DeleteUserIDRequest ->wifi?CPIP.AdminSuccess ->CP_SendAdminControlRequest(hash_x);
+HS_DeleteUserIDRequest() =wifi?HubIP.x.DeleteUserIDRequest ->HS_AdminSuccessResponse();
+CP_LinkButtonTrue(hash_x) =wifi!Bridge_HubIP.hash_x.LinkButtonTrue ->wifi?CPIP.AdminSuccess ->CP_SendAdminControlRequest(hash_x);
+HS_LinkButtonTrue() =wifi?HubIP.x.LinkButtonTrue ->executeCommand{linkButton = true} ->HS_AdminSuccessResponse();
+CP_Controlcmd(hash_x) =wifi!Bridge_HubIP.hash_x.Controlcmd ->wifi?CPIP.ControlCmdSuccess ->CP_SendRequest(hash_x);
+HS_Controlcmd() =wifi?HubIP.x.Controlcmd ->HS_ControlSuccessResponse();
+HS_LightResultResponse() =ifa(cPWhitelisted){wifi!CPIP.LightNo.LightName ->HS_ReceiveControlRequest()}[] ifa(attackerWhitelisted){wifi!AttackerIP.LightNo.LightName ->HS_ReceiveControlRequest()}[] HS_ReceiveControlRequest();
+HS_GetInfoResponse() =ifa(cPWhitelisted){wifi!CPIP.Configs.Lights.Whitelist ->HS_ReceiveAdminControlRequest()}[] ifa(attackerWhitelisted){wifi!AttackerIP.Configs.Lights.Whitelist ->HS_ReceiveAdminControlRequest()}[] HS_ReceiveAdminControlRequest();
+HS_AdminSuccessResponse() =ifa(cPWhitelisted){wifi!CPIP.AdminSuccess ->HS_ReceiveRequest()}[] ifa(attackerWhitelisted){wifi!AttackerIP.AdminSuccess ->HS_ReceiveRequest()}[] HS_ReceiveRequest();
+HS_ControlSuccessResponse() =ifa(cPWhitelisted){zigbee!New_DeviceID.PanID.EncryptedControlcmd ->zigbee?HubID.ACK ->wifi!CPIP.ControlCmdSuccess ->HS_ReceiveRequest()}[] ifa(attackerWhitelisted){zigbee!New_DeviceID.PanID.EncryptedControlcmd ->zigbee?HubID.ACK ->wifi!AttackerIP.ControlCmdSuccess ->HS_ReceiveRequest()}[] HS_ReceiveRequest();
+SD_Controlcmd() =zigbee?DeviceID.PanID.EncryptedControlcmd ->executeCommand.EncryptedControlcmd ->zigbee!Network_HubID.ACK ->SD_ReceiveRequest();
+System =AutoGeneratedNetworkAttacker() ||| SD_Proc() ||| HS_Proc() |||  ZFE_Proc()||| CP_Proc();
+#define SD_JoinedNetwork sDJoinedZigbeeNetwork == true;
+#assert System deadlockfree;
+#assert System reaches SD_JoinedNetwork;
+var attsdsendbeaconrequest = -1;
+var attsdrecvpanid = -1;
+var attsdrecvhub_id = -1;
+var attsdrecvassopermit = -1;
+var attsdsendpanid = -1;
+var attsdsenddeviceid = -1;
+var attzferecvbeaconrequest = -1;
+var attzfesendpanid = -1;
+var attzfesendhubid = -1;
+var attzfesendassopermit = -1;
+var attzferecvpanid = -1;
+var attzferecvdevice_id = -1;
+var attsdrecvbeaconrequest = -1;
+var attsdsendassopermit = -1;
+var attzfesendbeaconrequest = -1;
+var attzferecvassopermit = -1;
+var attcpsendupnpmsearchrequest = -1;
+var attcpsendcpip = -1;
+var attcprecvcpip = -1;
+var attcprecvservername = -1;
+var attcprecvhub_ip = -1;
+var attcprecvhub_id = -1;
+var atthsrecvupnpmsearchrequest = -1;
+var atthsrecvcp_ip = -1;
+var atthssendcp_ip = -1;
+var atthssendservername = -1;
+var atthssendhubip = -1;
+var atthssendhubid = -1;
+var attcpsendbridge_hubip = -1;
+var attcpsendcp_nonce = -1;
+var attcprecvhash_x = -1;
+var atthsrecvhubip = -1;
+var atthsrecvx = -1;
+var atthssendcpip = -1;
+var atthssendcp_hashed_nonce = -1;
+var atthssendattackerip = -1;
+var atthssendattacker_hashed_nonce = -1;
+var attcpsendhash_x = -1;
+var attcpsendsearchlightrequest = -1;
+var attcprecvrequestsuccess = -1;
+var atthsrecvsearchlightrequest = -1;
+var attzfesendscanrequest = -1;
+var attzferecvhubid = -1;
+var attzferecvscanresponse = -1;
+var attzfesendnew_deviceid = -1;
+var attzfesendidentifyrequest = -1;
+var attzfesendnetworkjoinrequest = -1;
+var attzferecvnetworkjoinresponse = -1;
+var attsdrecvscanrequest = -1;
+var attsdsendnetwork_hubid = -1;
+var attsdsendscanresponse = -1;
+var attsdrecvdeviceid = -1;
+var attsdrecvidentifyrequest = -1;
+var attsdrecvnetworkjoinrequest = -1;
+var attsdsendnetworkjoinresponse = -1;
+var attcpsendjoinnearestdevicerequest = -1;
+var atthsrecvjoinnearestdevicerequest = -1;
+var attzfesendlinkscanrequest = -1;
+var attzferecvlinkscanresponse = -1;
+var attzfesendlinkidentifyrequest = -1;
+var attzfesendlinknetworkjoinrequest = -1;
+var attzferecvlinknetworkjoinresponse = -1;
+var attsdrecvlinkscanrequest = -1;
+var attsdsendlinkscanresponse = -1;
+var attsdrecvlinkidentifyrequest = -1;
+var attsdrecvlinknetworkjoinrequest = -1;
+var attsdsendlinknetworkjoinresponse = -1;
+var atthssendrequestsuccess = -1;
+var attcpsendrequestlightresult = -1;
+var attcprecvlightno = -1;
+var attcprecvlightname = -1;
+var atthsrecvrequestlightresult = -1;
+var attcpsendgetinforequest = -1;
+var attcprecvconfigs = -1;
+var attcprecvlights = -1;
+var attcprecvwhitelist = -1;
+var atthsrecvgetinforequest = -1;
+var attcpsenddeletelightrequest = -1;
+var attcprecvadminsuccess = -1;
+var atthsrecvdeletelightrequest = -1;
+var attcpsenddeleteuseridrequest = -1;
+var atthsrecvdeleteuseridrequest = -1;
+var attcpsendlinkbuttontrue = -1;
+var atthsrecvlinkbuttontrue = -1;
+var attcpsendcontrolcmd = -1;
+var attcprecvcontrolcmdsuccess = -1;
+var atthsrecvcontrolcmd = -1;
+var atthssendlightno = -1;
+var atthssendlightname = -1;
+var atthssendconfigs = -1;
+var atthssendlights = -1;
+var atthssendwhitelist = -1;
+var atthssendadminsuccess = -1;
+var atthssendnew_deviceid = -1;
+var atthssendpanid = -1;
+var atthssendencryptedcontrolcmd = -1;
+var atthsrecvhubid = -1;
+var atthsrecvack = -1;
+var atthssendcontrolcmdsuccess = -1;
+var attsdrecvencryptedcontrolcmd = -1;
+var attsdsendack = -1;
+var netAttsendbeaconrequest = -1;
+var netAttsendpanid = -1;
+var netAttsendhubid = -1;
+var netAttsenddeviceid = -1;
+var netAttsendassopermit = -1;
+var netAttsendupnpmsearchrequest = -1;
+var netAttsendcpip = -1;
+var netAttsendattackerip = -1;
+var netAttsendservername = -1;
+var netAttsendhubip = -1;
+var netAttsendsearchlightrequest = -1;
+var netAttsendrequestsuccess = -1;
+var netAttsendscanrequest = -1;
+var netAttsendscanresponse = -1;
+var netAttsendidentifyrequest = -1;
+var netAttsendnetworkjoinrequest = -1;
+var netAttsendnetworkjoinresponse = -1;
+var netAttsendlinknetworkjoinresponse = -1;
+var netAttsendjoinnearestdevicerequest = -1;
+var netAttsendlinkscanrequest = -1;
+var netAttsendlinkscanresponse = -1;
+var netAttsendlinkidentifyrequest = -1;
+var netAttsendlinknetworkjoinrequest = -1;
+var netAttsendrequestlightresult = -1;
+var netAttsendlightno = -1;
+var netAttsendlightname = -1;
+var netAttsendgetinforequest = -1;
+var netAttsendconfigs = -1;
+var netAttsendlights = -1;
+var netAttsendwhitelist = -1;
+var netAttsenddeletelightrequest = -1;
+var netAttsendadminsuccess = -1;
+var netAttsenddeleteuseridrequest = -1;
+var netAttsendlinkbuttontrue = -1;
+var netAttsendcontrolcmd = -1;
+var netAttsendencryptedcontrolcmd = -1;
+var netAttsendack = -1;
+var netAttsendcontrolcmdsuccess = -1;
+var netAttsendcp = -1;
+var netAttsendhs = -1;
+var netAttsendzfe = -1;
+var netAttsendsd = -1;
+var netAttsendnobody = -1;
+var netAttsendcp_nonce = -1;
+var netAttsendcp_hashed_nonce = -1;
+var netAttsendattacker_nonce = -1;
+var netAttsendattacker_hashed_nonce = -1;
+var netAttsendattackerhubid = -1;
+var netAttsendattackerdeviceid = -1;
+var netAttsendattackerhttpreplay = -1;
+MaliciousSD_Proc() = MaliciousSD_Discovery();
+MaliciousHS_Proc() = MaliciousHS_Discovery();
+MaliciousZFE_Proc() = MaliciousZFE_Discovery();
+MaliciousCP_Proc() = MaliciousCP_Discovery();
+MaliciousSD_Discovery() =MaliciousSD_NetworkDiscovery() []MaliciousSD_DeviceDiscovery();
+MaliciousZFE_Discovery() =MaliciousZFE_NetworkDiscovery() []MaliciousZFE_DeviceDiscovery();
+MaliciousSD_NetworkDiscovery()=zigbee!BeaconRequest->generatedStatUpdate0{attsdsendbeaconrequest=BeaconRequest}->zigbee?PanID.hub_id.AssoPermit->generatedStatUpdate0{attsdrecvpanid=PanID}->generatedStatUpdate1{attsdrecvhub_id=hub_id}->generatedStatUpdate2{attsdrecvassopermit=AssoPermit}->NetworkHubDiscovered{Network_HubID=hub_id}->zigbee!PanID.DeviceID-> generatedStatUpdate0{attsdsendpanid=PanID}-> generatedStatUpdate1{attsdsenddeviceid=DeviceID}->MaliciousSD_JoinNetwork();
+MaliciousZFE_NetworkDiscovery()=zigbee?BeaconRequest->generatedStatUpdate0{attzferecvbeaconrequest=BeaconRequest}->zigbee!PanID.HubID.AssoPermit->generatedStatUpdate0{attzfesendpanid=PanID}->generatedStatUpdate1{attzfesendhubid=HubID}->generatedStatUpdate2{attzfesendassopermit=AssoPermit}->zigbee?PanID.device_id-> generatedStatUpdate0{attzferecvpanid=PanID}-> generatedStatUpdate1{attzferecvdevice_id=device_id}->NewDeviceDiscovered{New_DeviceID=device_id}->MaliciousZFE_JoinNetwork();
+MaliciousSD_DeviceDiscovery()=zigbee?BeaconRequest.hub_id->generatedStatUpdate0{attsdrecvbeaconrequest=BeaconRequest}->generatedStatUpdate1{attsdrecvhub_id=hub_id}->NetworkHubDiscovered{Network_HubID=hub_id}->zigbee!PanID.DeviceID.AssoPermit-> generatedStatUpdate0{attsdsendpanid=PanID}-> generatedStatUpdate1{attsdsenddeviceid=DeviceID}-> generatedStatUpdate2{attsdsendassopermit=AssoPermit}->MaliciousSD_JoinDevice();
+MaliciousZFE_DeviceDiscovery()=zigbee!BeaconRequest.HubID->generatedStatUpdate0{attzfesendbeaconrequest=BeaconRequest}->generatedStatUpdate1{attzfesendhubid=HubID}->zigbee?PanID.device_id.AssoPermit-> generatedStatUpdate0{attzferecvpanid=PanID}-> generatedStatUpdate1{attzferecvdevice_id=device_id}-> generatedStatUpdate2{attzferecvassopermit=AssoPermit}->NewDeviceDiscovered{New_DeviceID=device_id}->MaliciousZFE_JoinDevice();
+MaliciousCP_Discovery()=wifi!UPnPMsearchRequest.CPIP->generatedStatUpdate0{attcpsendupnpmsearchrequest=UPnPMsearchRequest}->generatedStatUpdate1{attcpsendcpip=CPIP}->wifi?CPIP.ServerName.hub_ip.hub_id-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvservername=ServerName}-> generatedStatUpdate2{attcprecvhub_ip=hub_ip}-> generatedStatUpdate3{attcprecvhub_id=hub_id}->ServerDiscovered{Bridge_HubIP=hub_ip}->MaliciousCP_Auth();
+MaliciousHS_Discovery()=wifi?UPnPMsearchRequest.cp_ip->generatedStatUpdate0{atthsrecvupnpmsearchrequest=UPnPMsearchRequest}->generatedStatUpdate1{atthsrecvcp_ip=cp_ip}->wifi!cp_ip.ServerName.HubIP.HubID-> generatedStatUpdate0{atthssendcp_ip=cp_ip}-> generatedStatUpdate1{atthssendservername=ServerName}-> generatedStatUpdate2{atthssendhubip=HubIP}-> generatedStatUpdate3{atthssendhubid=HubID}->MaliciousHS_Auth();
+MaliciousCP_Auth()=newnonce.cp_nonce->wifi!Bridge_HubIP.cp_nonce->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendcp_nonce=cp_nonce}->wifi?CPIP.hash_x-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvhash_x=hash_x}->MaliciousCP_SendRequest(hash_x);
+MaliciousHS_Auth()=wifi?HubIP.x-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}->MaliciousHS_AuthFromNonce(x);
+MaliciousHS_AuthFromNonce(x)=ifa(x==cp_nonce){executeCommand{linkButton=true}->wifi!CPIP.cp_hashed_nonce->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendcp_hashed_nonce=cp_hashed_nonce}->CPConnected{cPWhitelisted=true}->executeCommand{linkButton=false}->MaliciousHS_ReceiveRequest()}else{executeCommand{linkButton=true}->wifi!AttackerIP.Attacker_hashed_nonce-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendattacker_hashed_nonce=Attacker_hashed_nonce}->CPConnected{attackerWhitelisted=true}->executeCommand{linkButton=false}->MaliciousHS_ReceiveRequest()};
+MaliciousCP_SendSearchLightRequest(hash_x)=wifi!Bridge_HubIP.hash_x.SearchLightRequest->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsendsearchlightrequest=SearchLightRequest}->wifi?CPIP.RequestSuccess-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvrequestsuccess=RequestSuccess}->MaliciousCP_SendRequest(hash_x);
+MaliciousHS_ReceiveSearchLightRequest()=wifi?HubIP.x.SearchLightRequest-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvsearchlightrequest=SearchLightRequest}->MaliciousHS_SearchLightResponse();
+MaliciousZFE_JoinNetwork()=zigbee!ScanRequest.PanID->generatedStatUpdate0{attzfesendscanrequest=ScanRequest}->generatedStatUpdate1{attzfesendpanid=PanID}->zigbee?HubID.PanID.ScanResponse->generatedStatUpdate0{attzferecvhubid=HubID}->generatedStatUpdate1{attzferecvpanid=PanID}->generatedStatUpdate2{attzferecvscanresponse=ScanResponse}->zigbee!New_DeviceID.IdentifyRequest->generatedStatUpdate0{attzfesendnew_deviceid=New_DeviceID}->generatedStatUpdate1{attzfesendidentifyrequest=IdentifyRequest}->zigbee!New_DeviceID.PanID.NetworkJoinRequest->generatedStatUpdate0{attzfesendnew_deviceid=New_DeviceID}->generatedStatUpdate1{attzfesendpanid=PanID}->generatedStatUpdate2{attzfesendnetworkjoinrequest=NetworkJoinRequest}->zigbee?HubID.PanID.NetworkJoinResponse-> generatedStatUpdate0{attzferecvhubid=HubID}-> generatedStatUpdate1{attzferecvpanid=PanID}-> generatedStatUpdate2{attzferecvnetworkjoinresponse=NetworkJoinResponse}->MaliciousHS_ReceiveRequest();
+MaliciousSD_JoinNetwork()=zigbee?ScanRequest.PanID->generatedStatUpdate0{attsdrecvscanrequest=ScanRequest}->generatedStatUpdate1{attsdrecvpanid=PanID}->zigbee!Network_HubID.PanID.ScanResponse->generatedStatUpdate0{attsdsendnetwork_hubid=Network_HubID}->generatedStatUpdate1{attsdsendpanid=PanID}->generatedStatUpdate2{attsdsendscanresponse=ScanResponse}->zigbee?DeviceID.IdentifyRequest->generatedStatUpdate0{attsdrecvdeviceid=DeviceID}->generatedStatUpdate1{attsdrecvidentifyrequest=IdentifyRequest}->executeCommand.IdentifyRequest->zigbee?DeviceID.PanID.NetworkJoinRequest->generatedStatUpdate0{attsdrecvdeviceid=DeviceID}->generatedStatUpdate1{attsdrecvpanid=PanID}->generatedStatUpdate2{attsdrecvnetworkjoinrequest=NetworkJoinRequest}->zigbee!Network_HubID.PanID.NetworkJoinResponse-> generatedStatUpdate0{attsdsendnetwork_hubid=Network_HubID}-> generatedStatUpdate1{attsdsendpanid=PanID}-> generatedStatUpdate2{attsdsendnetworkjoinresponse=NetworkJoinResponse}->JoinToNetwork{sDJoinedZigbeeNetwork=true}->MaliciousSD_TouchLink();
+MaliciousCP_SendJoinNearestDeviceRequest(hash_x)=wifi!Bridge_HubIP.hash_x.JoinNearestDeviceRequest->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsendjoinnearestdevicerequest=JoinNearestDeviceRequest}->wifi?CPIP.RequestSuccess-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvrequestsuccess=RequestSuccess}->MaliciousCP_SendRequest(hash_x);
+MaliciousHS_ReceiveJoinNearestDeviceRequest()=wifi?HubIP.x.JoinNearestDeviceRequest-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvjoinnearestdevicerequest=JoinNearestDeviceRequest}->MaliciousHS_JoinNearestDeviceResponse();
+MaliciousZFE_JoinDevice()=zigbee!LinkScanRequest.PanID->generatedStatUpdate0{attzfesendlinkscanrequest=LinkScanRequest}->generatedStatUpdate1{attzfesendpanid=PanID}->zigbee?HubID.PanID.LinkScanResponse->generatedStatUpdate0{attzferecvhubid=HubID}->generatedStatUpdate1{attzferecvpanid=PanID}->generatedStatUpdate2{attzferecvlinkscanresponse=LinkScanResponse}->zigbee!New_DeviceID.LinkIdentifyRequest->generatedStatUpdate0{attzfesendnew_deviceid=New_DeviceID}->generatedStatUpdate1{attzfesendlinkidentifyrequest=LinkIdentifyRequest}->zigbee!New_DeviceID.PanID.LinkNetworkJoinRequest->generatedStatUpdate0{attzfesendnew_deviceid=New_DeviceID}->generatedStatUpdate1{attzfesendpanid=PanID}->generatedStatUpdate2{attzfesendlinknetworkjoinrequest=LinkNetworkJoinRequest}->zigbee?HubID.PanID.LinkNetworkJoinResponse-> generatedStatUpdate0{attzferecvhubid=HubID}-> generatedStatUpdate1{attzferecvpanid=PanID}-> generatedStatUpdate2{attzferecvlinknetworkjoinresponse=LinkNetworkJoinResponse}->MaliciousHS_ReceiveRequest();
+MaliciousSD_JoinDevice()=zigbee?LinkScanRequest.PanID->generatedStatUpdate0{attsdrecvlinkscanrequest=LinkScanRequest}->generatedStatUpdate1{attsdrecvpanid=PanID}->zigbee!Network_HubID.PanID.LinkScanResponse->generatedStatUpdate0{attsdsendnetwork_hubid=Network_HubID}->generatedStatUpdate1{attsdsendpanid=PanID}->generatedStatUpdate2{attsdsendlinkscanresponse=LinkScanResponse}->zigbee?DeviceID.LinkIdentifyRequest->generatedStatUpdate0{attsdrecvdeviceid=DeviceID}->generatedStatUpdate1{attsdrecvlinkidentifyrequest=LinkIdentifyRequest}->executeCommand.LinkIdentifyRequest->zigbee?DeviceID.PanID.LinkNetworkJoinRequest->generatedStatUpdate0{attsdrecvdeviceid=DeviceID}->generatedStatUpdate1{attsdrecvpanid=PanID}->generatedStatUpdate2{attsdrecvlinknetworkjoinrequest=LinkNetworkJoinRequest}->zigbee!Network_HubID.PanID.LinkNetworkJoinResponse-> generatedStatUpdate0{attsdsendnetwork_hubid=Network_HubID}-> generatedStatUpdate1{attsdsendpanid=PanID}-> generatedStatUpdate2{attsdsendlinknetworkjoinresponse=LinkNetworkJoinResponse}->JoinToNetwork{sDJoinedZigbeeNetwork=true}->MaliciousSD_TouchLink();
+MaliciousSD_TouchLink() = MaliciousSD_DeviceDiscovery() [] MaliciousSD_ReceiveRequest();
+MaliciousHS_SearchLightResponse()=ifa(cPWhitelisted){wifi!CPIP.RequestSuccess->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendrequestsuccess=RequestSuccess}->MaliciousZFE_JoinNetwork()}[]ifa(attackerWhitelisted){wifi!AttackerIP.RequestSuccess-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendrequestsuccess=RequestSuccess}->MaliciousZFE_JoinNetwork()}[]MaliciousHS_ReceiveRequest();
+MaliciousHS_JoinNearestDeviceResponse()=ifa(cPWhitelisted){wifi!CPIP.RequestSuccess->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendrequestsuccess=RequestSuccess}->MaliciousZFE_JoinDevice()}[]ifa(attackerWhitelisted){wifi!AttackerIP.RequestSuccess-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendrequestsuccess=RequestSuccess}->MaliciousZFE_JoinDevice()}[]MaliciousHS_ReceiveRequest();
+MaliciousCP_SendRequest(hash_x) =MaliciousCP_SendSearchLightRequest(hash_x) []MaliciousCP_SendJoinNearestDeviceRequest(hash_x) []MaliciousCP_RequestLightResult(hash_x) []MaliciousCP_GetInfoRequest(hash_x);
+MaliciousHS_ReceiveRequest() =MaliciousHS_ReceiveSearchLightRequest() []MaliciousHS_ReceiveJoinNearestDeviceRequest() []MaliciousHS_RequestLightResult() []MaliciousHS_GetInfoRequest();
+MaliciousSD_ReceiveRequest() =MaliciousSD_JoinNetwork() []MaliciousSD_JoinDevice() []MaliciousSD_Controlcmd();
+MaliciousCP_SendAdminControlRequest(hash_x) =MaliciousCP_GetInfoRequest(hash_x) []MaliciousCP_DeleteLightRequest(hash_x) []MaliciousCP_DeleteUserIDRequest(hash_x) []MaliciousCP_LinkButtonTrue(hash_x) []MaliciousCP_SendRequest(hash_x);
+MaliciousHS_ReceiveAdminControlRequest() =MaliciousHS_GetInfoRequest() []MaliciousHS_DeleteLightRequest() []MaliciousHS_DeleteUserIDRequest() []MaliciousHS_LinkButtonTrue() []MaliciousHS_ReceiveRequest();
+MaliciousCP_SendControlRequest(hash_x) =MaliciousCP_RequestLightResult(hash_x) []MaliciousCP_Controlcmd(hash_x) []MaliciousCP_SendRequest(hash_x);
+MaliciousHS_ReceiveControlRequest() =MaliciousHS_RequestLightResult() []MaliciousHS_Controlcmd() []MaliciousHS_ReceiveRequest();
+MaliciousCP_RequestLightResult(hash_x)=wifi!Bridge_HubIP.hash_x.RequestLightResult->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsendrequestlightresult=RequestLightResult}->wifi?CPIP.LightNo.LightName-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvlightno=LightNo}-> generatedStatUpdate2{attcprecvlightname=LightName}->MaliciousCP_SendControlRequest(hash_x);
+MaliciousHS_RequestLightResult()=wifi?HubIP.x.RequestLightResult-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvrequestlightresult=RequestLightResult}->MaliciousHS_LightResultResponse();
+MaliciousCP_GetInfoRequest(hash_x)=wifi!Bridge_HubIP.hash_x.GetInfoRequest->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsendgetinforequest=GetInfoRequest}->wifi?CPIP.Configs.Lights.Whitelist-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvconfigs=Configs}-> generatedStatUpdate2{attcprecvlights=Lights}-> generatedStatUpdate3{attcprecvwhitelist=Whitelist}->MaliciousCP_SendAdminControlRequest(hash_x);
+MaliciousHS_GetInfoRequest()=wifi?HubIP.x.GetInfoRequest-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvgetinforequest=GetInfoRequest}->MaliciousHS_GetInfoResponse();
+MaliciousCP_DeleteLightRequest(hash_x)=wifi!Bridge_HubIP.hash_x.DeleteLightRequest->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsenddeletelightrequest=DeleteLightRequest}->wifi?CPIP.AdminSuccess-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvadminsuccess=AdminSuccess}->MaliciousCP_SendAdminControlRequest(hash_x);
+MaliciousHS_DeleteLightRequest()=wifi?HubIP.x.DeleteLightRequest-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvdeletelightrequest=DeleteLightRequest}->MaliciousHS_AdminSuccessResponse();
+MaliciousCP_DeleteUserIDRequest(hash_x)=wifi!Bridge_HubIP.hash_x.DeleteUserIDRequest->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsenddeleteuseridrequest=DeleteUserIDRequest}->wifi?CPIP.AdminSuccess-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvadminsuccess=AdminSuccess}->MaliciousCP_SendAdminControlRequest(hash_x);
+MaliciousHS_DeleteUserIDRequest()=wifi?HubIP.x.DeleteUserIDRequest-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvdeleteuseridrequest=DeleteUserIDRequest}->MaliciousHS_AdminSuccessResponse();
+MaliciousCP_LinkButtonTrue(hash_x)=wifi!Bridge_HubIP.hash_x.LinkButtonTrue->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsendlinkbuttontrue=LinkButtonTrue}->wifi?CPIP.AdminSuccess-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvadminsuccess=AdminSuccess}->MaliciousCP_SendAdminControlRequest(hash_x);
+MaliciousHS_LinkButtonTrue()=wifi?HubIP.x.LinkButtonTrue-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvlinkbuttontrue=LinkButtonTrue}->executeCommand{linkButton=true}->MaliciousHS_AdminSuccessResponse();
+MaliciousCP_Controlcmd(hash_x)=wifi!Bridge_HubIP.hash_x.Controlcmd->generatedStatUpdate0{attcpsendbridge_hubip=Bridge_HubIP}->generatedStatUpdate1{attcpsendhash_x=hash_x}->generatedStatUpdate2{attcpsendcontrolcmd=Controlcmd}->wifi?CPIP.ControlCmdSuccess-> generatedStatUpdate0{attcprecvcpip=CPIP}-> generatedStatUpdate1{attcprecvcontrolcmdsuccess=ControlCmdSuccess}->MaliciousCP_SendRequest(hash_x);
+MaliciousHS_Controlcmd()=wifi?HubIP.x.Controlcmd-> generatedStatUpdate0{atthsrecvhubip=HubIP}-> generatedStatUpdate1{atthsrecvx=x}-> generatedStatUpdate2{atthsrecvcontrolcmd=Controlcmd}->MaliciousHS_ControlSuccessResponse();
+MaliciousHS_LightResultResponse()=ifa(cPWhitelisted){wifi!CPIP.LightNo.LightName->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendlightno=LightNo}->generatedStatUpdate2{atthssendlightname=LightName}->MaliciousHS_ReceiveControlRequest()}[]ifa(attackerWhitelisted){wifi!AttackerIP.LightNo.LightName-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendlightno=LightNo}-> generatedStatUpdate2{atthssendlightname=LightName}->MaliciousHS_ReceiveControlRequest()}[]MaliciousHS_ReceiveControlRequest();
+MaliciousHS_GetInfoResponse()=ifa(cPWhitelisted){wifi!CPIP.Configs.Lights.Whitelist->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendconfigs=Configs}->generatedStatUpdate2{atthssendlights=Lights}->generatedStatUpdate3{atthssendwhitelist=Whitelist}->MaliciousHS_ReceiveAdminControlRequest()}[]ifa(attackerWhitelisted){wifi!AttackerIP.Configs.Lights.Whitelist-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendconfigs=Configs}-> generatedStatUpdate2{atthssendlights=Lights}-> generatedStatUpdate3{atthssendwhitelist=Whitelist}->MaliciousHS_ReceiveAdminControlRequest()}[]MaliciousHS_ReceiveAdminControlRequest();
+MaliciousHS_AdminSuccessResponse()=ifa(cPWhitelisted){wifi!CPIP.AdminSuccess->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendadminsuccess=AdminSuccess}->MaliciousHS_ReceiveRequest()}[]ifa(attackerWhitelisted){wifi!AttackerIP.AdminSuccess-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendadminsuccess=AdminSuccess}->MaliciousHS_ReceiveRequest()}[]MaliciousHS_ReceiveRequest();
+MaliciousHS_ControlSuccessResponse()=ifa(cPWhitelisted){zigbee!New_DeviceID.PanID.EncryptedControlcmd->generatedStatUpdate0{atthssendnew_deviceid=New_DeviceID}->generatedStatUpdate1{atthssendpanid=PanID}->generatedStatUpdate2{atthssendencryptedcontrolcmd=EncryptedControlcmd}->zigbee?HubID.ACK->generatedStatUpdate0{atthsrecvhubid=HubID}->generatedStatUpdate1{atthsrecvack=ACK}->generatedStatUpdate0{atthsrecvhubid=HubID}->generatedStatUpdate1{atthsrecvack=ACK}->wifi!CPIP.ControlCmdSuccess->generatedStatUpdate0{atthssendcpip=CPIP}->generatedStatUpdate1{atthssendcontrolcmdsuccess=ControlCmdSuccess}->MaliciousHS_ReceiveRequest()}[]ifa(attackerWhitelisted){zigbee!New_DeviceID.PanID.EncryptedControlcmd->generatedStatUpdate0{atthssendnew_deviceid=New_DeviceID}->generatedStatUpdate1{atthssendpanid=PanID}->generatedStatUpdate2{atthssendencryptedcontrolcmd=EncryptedControlcmd}->zigbee?HubID.ACK->generatedStatUpdate0{atthsrecvhubid=HubID}->generatedStatUpdate1{atthsrecvack=ACK}->generatedStatUpdate0{atthsrecvhubid=HubID}->generatedStatUpdate1{atthsrecvack=ACK}->wifi!AttackerIP.ControlCmdSuccess-> generatedStatUpdate0{atthssendattackerip=AttackerIP}-> generatedStatUpdate1{atthssendcontrolcmdsuccess=ControlCmdSuccess}->MaliciousHS_ReceiveRequest()}[]MaliciousHS_ReceiveRequest();
+MaliciousSD_Controlcmd()=zigbee?DeviceID.PanID.EncryptedControlcmd->generatedStatUpdate0{attsdrecvdeviceid=DeviceID}->generatedStatUpdate1{attsdrecvpanid=PanID}->generatedStatUpdate2{attsdrecvencryptedcontrolcmd=EncryptedControlcmd}->executeCommand.EncryptedControlcmd->zigbee!Network_HubID.ACK-> generatedStatUpdate0{attsdsendnetwork_hubid=Network_HubID}-> generatedStatUpdate1{attsdsendack=ACK}->MaliciousSD_ReceiveRequest();
+MaliciousSystem =AutoGeneratedNetworkAttacker() ||| MaliciousSD_Proc() ||| MaliciousHS_Proc() |||  MaliciousZFE_Proc()||| MaliciousCP_Proc();
+MaliciousSDSystem_Proc=MaliciousSD_Proc()|||HS_Proc()|||ZFE_Proc()|||CP_Proc();
+MaliciousHSSystem_Proc=SD_Proc()|||MaliciousHS_Proc()|||ZFE_Proc()|||CP_Proc();
+MaliciousZFESystem_Proc=SD_Proc()|||HS_Proc()|||MaliciousZFE_Proc()|||CP_Proc();
+MaliciousCPSystem_Proc=SD_Proc()|||HS_Proc()|||ZFE_Proc()|||MaliciousCP_Proc();
+#define sdsentBeaconRequest attsdsendbeaconrequest> -1;
+#define sdreceivedPanID attsdrecvpanid> -1;
+#define sdreceivedhub_id attsdrecvhub_id> -1;
+#define sdreceivedAssoPermit attsdrecvassopermit> -1;
+#define sdsentPanID attsdsendpanid> -1;
+#define sdsentDeviceID attsdsenddeviceid> -1;
+#define zfereceivedBeaconRequest attzferecvbeaconrequest> -1;
+#define zfesentPanID attzfesendpanid> -1;
+#define zfesentHubID attzfesendhubid> -1;
+#define zfesentAssoPermit attzfesendassopermit> -1;
+#define zfereceivedPanID attzferecvpanid> -1;
+#define zfereceiveddevice_id attzferecvdevice_id> -1;
+#define sdreceivedBeaconRequest attsdrecvbeaconrequest> -1;
+#define sdsentAssoPermit attsdsendassopermit> -1;
+#define zfesentBeaconRequest attzfesendbeaconrequest> -1;
+#define zfereceivedAssoPermit attzferecvassopermit> -1;
+#define cpsentUPnPMsearchRequest attcpsendupnpmsearchrequest> -1;
+#define cpsentCPIP attcpsendcpip> -1;
+#define cpreceivedCPIP attcprecvcpip> -1;
+#define cpreceivedServerName attcprecvservername> -1;
+#define cpreceivedhub_ip attcprecvhub_ip> -1;
+#define cpreceivedhub_id attcprecvhub_id> -1;
+#define hsreceivedUPnPMsearchRequest atthsrecvupnpmsearchrequest> -1;
+#define hsreceivedcp_ip atthsrecvcp_ip> -1;
+#define hssentcp_ip atthssendcp_ip> -1;
+#define hssentServerName atthssendservername> -1;
+#define hssentHubIP atthssendhubip> -1;
+#define hssentHubID atthssendhubid> -1;
+#define cpsentBridge_HubIP attcpsendbridge_hubip> -1;
+#define cpsentcp_nonce attcpsendcp_nonce> -1;
+#define cpreceivedhash_x attcprecvhash_x> -1;
+#define hsreceivedHubIP atthsrecvhubip> -1;
+#define hsreceivedx atthsrecvx> -1;
+#define hssentCPIP atthssendcpip> -1;
+#define hssentcp_hashed_nonce atthssendcp_hashed_nonce> -1;
+#define hssentAttackerIP atthssendattackerip> -1;
+#define hssentAttacker_hashed_nonce atthssendattacker_hashed_nonce> -1;
+#define cpsenthash_x attcpsendhash_x> -1;
+#define cpsentSearchLightRequest attcpsendsearchlightrequest> -1;
+#define cpreceivedRequestSuccess attcprecvrequestsuccess> -1;
+#define hsreceivedSearchLightRequest atthsrecvsearchlightrequest> -1;
+#define zfesentScanRequest attzfesendscanrequest> -1;
+#define zfereceivedHubID attzferecvhubid> -1;
+#define zfereceivedScanResponse attzferecvscanresponse> -1;
+#define zfesentNew_DeviceID attzfesendnew_deviceid> -1;
+#define zfesentIdentifyRequest attzfesendidentifyrequest> -1;
+#define zfesentNetworkJoinRequest attzfesendnetworkjoinrequest> -1;
+#define zfereceivedNetworkJoinResponse attzferecvnetworkjoinresponse> -1;
+#define sdreceivedScanRequest attsdrecvscanrequest> -1;
+#define sdsentNetwork_HubID attsdsendnetwork_hubid> -1;
+#define sdsentScanResponse attsdsendscanresponse> -1;
+#define sdreceivedDeviceID attsdrecvdeviceid> -1;
+#define sdreceivedIdentifyRequest attsdrecvidentifyrequest> -1;
+#define sdreceivedNetworkJoinRequest attsdrecvnetworkjoinrequest> -1;
+#define sdsentNetworkJoinResponse attsdsendnetworkjoinresponse> -1;
+#define cpsentJoinNearestDeviceRequest attcpsendjoinnearestdevicerequest> -1;
+#define hsreceivedJoinNearestDeviceRequest atthsrecvjoinnearestdevicerequest> -1;
+#define zfesentLinkScanRequest attzfesendlinkscanrequest> -1;
+#define zfereceivedLinkScanResponse attzferecvlinkscanresponse> -1;
+#define zfesentLinkIdentifyRequest attzfesendlinkidentifyrequest> -1;
+#define zfesentLinkNetworkJoinRequest attzfesendlinknetworkjoinrequest> -1;
+#define zfereceivedLinkNetworkJoinResponse attzferecvlinknetworkjoinresponse> -1;
+#define sdreceivedLinkScanRequest attsdrecvlinkscanrequest> -1;
+#define sdsentLinkScanResponse attsdsendlinkscanresponse> -1;
+#define sdreceivedLinkIdentifyRequest attsdrecvlinkidentifyrequest> -1;
+#define sdreceivedLinkNetworkJoinRequest attsdrecvlinknetworkjoinrequest> -1;
+#define sdsentLinkNetworkJoinResponse attsdsendlinknetworkjoinresponse> -1;
+#define hssentRequestSuccess atthssendrequestsuccess> -1;
+#define cpsentRequestLightResult attcpsendrequestlightresult> -1;
+#define cpreceivedLightNo attcprecvlightno> -1;
+#define cpreceivedLightName attcprecvlightname> -1;
+#define hsreceivedRequestLightResult atthsrecvrequestlightresult> -1;
+#define cpsentGetInfoRequest attcpsendgetinforequest> -1;
+#define cpreceivedConfigs attcprecvconfigs> -1;
+#define cpreceivedLights attcprecvlights> -1;
+#define cpreceivedWhitelist attcprecvwhitelist> -1;
+#define hsreceivedGetInfoRequest atthsrecvgetinforequest> -1;
+#define cpsentDeleteLightRequest attcpsenddeletelightrequest> -1;
+#define cpreceivedAdminSuccess attcprecvadminsuccess> -1;
+#define hsreceivedDeleteLightRequest atthsrecvdeletelightrequest> -1;
+#define cpsentDeleteUserIDRequest attcpsenddeleteuseridrequest> -1;
+#define hsreceivedDeleteUserIDRequest atthsrecvdeleteuseridrequest> -1;
+#define cpsentLinkButtonTrue attcpsendlinkbuttontrue> -1;
+#define hsreceivedLinkButtonTrue atthsrecvlinkbuttontrue> -1;
+#define cpsentControlcmd attcpsendcontrolcmd> -1;
+#define cpreceivedControlCmdSuccess attcprecvcontrolcmdsuccess> -1;
+#define hsreceivedControlcmd atthsrecvcontrolcmd> -1;
+#define hssentLightNo atthssendlightno> -1;
+#define hssentLightName atthssendlightname> -1;
+#define hssentConfigs atthssendconfigs> -1;
+#define hssentLights atthssendlights> -1;
+#define hssentWhitelist atthssendwhitelist> -1;
+#define hssentAdminSuccess atthssendadminsuccess> -1;
+#define hssentNew_DeviceID atthssendnew_deviceid> -1;
+#define hssentPanID atthssendpanid> -1;
+#define hssentEncryptedControlcmd atthssendencryptedcontrolcmd> -1;
+#define hsreceivedHubID atthsrecvhubid> -1;
+#define hsreceivedACK atthsrecvack> -1;
+#define hssentControlCmdSuccess atthssendcontrolcmdsuccess> -1;
+#define sdreceivedEncryptedControlcmd attsdrecvencryptedcontrolcmd> -1;
+#define sdsentACK attsdsendack> -1;
+#define netAttsentBeaconRequest netAttsendbeaconrequest> -1;
+#define netAttsentPanID netAttsendpanid> -1;
+#define netAttsentHubID netAttsendhubid> -1;
+#define netAttsentDeviceID netAttsenddeviceid> -1;
+#define netAttsentAssoPermit netAttsendassopermit> -1;
+#define netAttsentUPnPMsearchRequest netAttsendupnpmsearchrequest> -1;
+#define netAttsentCPIP netAttsendcpip> -1;
+#define netAttsentAttackerIP netAttsendattackerip> -1;
+#define netAttsentServerName netAttsendservername> -1;
+#define netAttsentHubIP netAttsendhubip> -1;
+#define netAttsentSearchLightRequest netAttsendsearchlightrequest> -1;
+#define netAttsentRequestSuccess netAttsendrequestsuccess> -1;
+#define netAttsentScanRequest netAttsendscanrequest> -1;
+#define netAttsentScanResponse netAttsendscanresponse> -1;
+#define netAttsentIdentifyRequest netAttsendidentifyrequest> -1;
+#define netAttsentNetworkJoinRequest netAttsendnetworkjoinrequest> -1;
+#define netAttsentNetworkJoinResponse netAttsendnetworkjoinresponse> -1;
+#define netAttsentLinkNetworkJoinResponse netAttsendlinknetworkjoinresponse> -1;
+#define netAttsentJoinNearestDeviceRequest netAttsendjoinnearestdevicerequest> -1;
+#define netAttsentLinkScanRequest netAttsendlinkscanrequest> -1;
+#define netAttsentLinkScanResponse netAttsendlinkscanresponse> -1;
+#define netAttsentLinkIdentifyRequest netAttsendlinkidentifyrequest> -1;
+#define netAttsentLinkNetworkJoinRequest netAttsendlinknetworkjoinrequest> -1;
+#define netAttsentRequestLightResult netAttsendrequestlightresult> -1;
+#define netAttsentLightNo netAttsendlightno> -1;
+#define netAttsentLightName netAttsendlightname> -1;
+#define netAttsentGetInfoRequest netAttsendgetinforequest> -1;
+#define netAttsentConfigs netAttsendconfigs> -1;
+#define netAttsentLights netAttsendlights> -1;
+#define netAttsentWhitelist netAttsendwhitelist> -1;
+#define netAttsentDeleteLightRequest netAttsenddeletelightrequest> -1;
+#define netAttsentAdminSuccess netAttsendadminsuccess> -1;
+#define netAttsentDeleteUserIDRequest netAttsenddeleteuseridrequest> -1;
+#define netAttsentLinkButtonTrue netAttsendlinkbuttontrue> -1;
+#define netAttsentControlcmd netAttsendcontrolcmd> -1;
+#define netAttsentEncryptedControlcmd netAttsendencryptedcontrolcmd> -1;
+#define netAttsentACK netAttsendack> -1;
+#define netAttsentControlCmdSuccess netAttsendcontrolcmdsuccess> -1;
+#define netAttsentCP netAttsendcp> -1;
+#define netAttsentHS netAttsendhs> -1;
+#define netAttsentZFE netAttsendzfe> -1;
+#define netAttsentSD netAttsendsd> -1;
+#define netAttsentNobody netAttsendnobody> -1;
+#define netAttsentcp_nonce netAttsendcp_nonce> -1;
+#define netAttsentcp_hashed_nonce netAttsendcp_hashed_nonce> -1;
+#define netAttsentAttacker_nonce netAttsendattacker_nonce> -1;
+#define netAttsentAttacker_hashed_nonce netAttsendattacker_hashed_nonce> -1;
+#define netAttsentAttackerHubID netAttsendattackerhubid> -1;
+#define netAttsentAttackerDeviceID netAttsendattackerdeviceid> -1;
+#define netAttsentAttackerHttpReplay netAttsendattackerhttpreplay> -1;
+#assert MaliciousSDSystem_Proc reaches sdsentBeaconRequest;
+#assert MaliciousSDSystem_Proc reaches sdreceivedPanID;
+#assert MaliciousSDSystem_Proc reaches sdreceivedhub_id;
+#assert MaliciousSDSystem_Proc reaches sdreceivedAssoPermit;
+#assert MaliciousSDSystem_Proc reaches sdsentPanID;
+#assert MaliciousSDSystem_Proc reaches sdsentDeviceID;
+#assert MaliciousZFESystem_Proc reaches zfereceivedBeaconRequest;
+#assert MaliciousZFESystem_Proc reaches zfesentPanID;
+#assert MaliciousZFESystem_Proc reaches zfesentHubID;
+#assert MaliciousZFESystem_Proc reaches zfesentAssoPermit;
+#assert MaliciousZFESystem_Proc reaches zfereceivedPanID;
+#assert MaliciousZFESystem_Proc reaches zfereceiveddevice_id;
+#assert MaliciousSDSystem_Proc reaches sdreceivedBeaconRequest;
+#assert MaliciousSDSystem_Proc reaches sdsentAssoPermit;
+#assert MaliciousZFESystem_Proc reaches zfesentBeaconRequest;
+#assert MaliciousZFESystem_Proc reaches zfereceivedAssoPermit;
+#assert MaliciousCPSystem_Proc reaches cpsentUPnPMsearchRequest;
+#assert MaliciousCPSystem_Proc reaches cpsentCPIP;
+#assert MaliciousCPSystem_Proc reaches cpreceivedCPIP;
+#assert MaliciousCPSystem_Proc reaches cpreceivedServerName;
+#assert MaliciousCPSystem_Proc reaches cpreceivedhub_ip;
+#assert MaliciousCPSystem_Proc reaches cpreceivedhub_id;
+#assert MaliciousHSSystem_Proc reaches hsreceivedUPnPMsearchRequest;
+#assert MaliciousHSSystem_Proc reaches hsreceivedcp_ip;
+#assert MaliciousHSSystem_Proc reaches hssentcp_ip;
+#assert MaliciousHSSystem_Proc reaches hssentServerName;
+#assert MaliciousHSSystem_Proc reaches hssentHubIP;
+#assert MaliciousHSSystem_Proc reaches hssentHubID;
+#assert MaliciousCPSystem_Proc reaches cpsentBridge_HubIP;
+#assert MaliciousCPSystem_Proc reaches cpsentcp_nonce;
+#assert MaliciousCPSystem_Proc reaches cpreceivedhash_x;
+#assert MaliciousHSSystem_Proc reaches hsreceivedHubIP;
+#assert MaliciousHSSystem_Proc reaches hsreceivedx;
+#assert MaliciousHSSystem_Proc reaches hssentCPIP;
+#assert MaliciousHSSystem_Proc reaches hssentcp_hashed_nonce;
+#assert MaliciousHSSystem_Proc reaches hssentAttackerIP;
+#assert MaliciousHSSystem_Proc reaches hssentAttacker_hashed_nonce;
+#assert MaliciousCPSystem_Proc reaches cpsenthash_x;
+#assert MaliciousCPSystem_Proc reaches cpsentSearchLightRequest;
+#assert MaliciousCPSystem_Proc reaches cpreceivedRequestSuccess;
+#assert MaliciousHSSystem_Proc reaches hsreceivedSearchLightRequest;
+#assert MaliciousZFESystem_Proc reaches zfesentScanRequest;
+#assert MaliciousZFESystem_Proc reaches zfereceivedHubID;
+#assert MaliciousZFESystem_Proc reaches zfereceivedScanResponse;
+#assert MaliciousZFESystem_Proc reaches zfesentNew_DeviceID;
+#assert MaliciousZFESystem_Proc reaches zfesentIdentifyRequest;
+#assert MaliciousZFESystem_Proc reaches zfesentNetworkJoinRequest;
+#assert MaliciousZFESystem_Proc reaches zfereceivedNetworkJoinResponse;
+#assert MaliciousSDSystem_Proc reaches sdreceivedScanRequest;
+#assert MaliciousSDSystem_Proc reaches sdsentNetwork_HubID;
+#assert MaliciousSDSystem_Proc reaches sdsentScanResponse;
+#assert MaliciousSDSystem_Proc reaches sdreceivedDeviceID;
+#assert MaliciousSDSystem_Proc reaches sdreceivedIdentifyRequest;
+#assert MaliciousSDSystem_Proc reaches sdreceivedNetworkJoinRequest;
+#assert MaliciousSDSystem_Proc reaches sdsentNetworkJoinResponse;
+#assert MaliciousCPSystem_Proc reaches cpsentJoinNearestDeviceRequest;
+#assert MaliciousHSSystem_Proc reaches hsreceivedJoinNearestDeviceRequest;
+#assert MaliciousZFESystem_Proc reaches zfesentLinkScanRequest;
+#assert MaliciousZFESystem_Proc reaches zfereceivedLinkScanResponse;
+#assert MaliciousZFESystem_Proc reaches zfesentLinkIdentifyRequest;
+#assert MaliciousZFESystem_Proc reaches zfesentLinkNetworkJoinRequest;
+#assert MaliciousZFESystem_Proc reaches zfereceivedLinkNetworkJoinResponse;
+#assert MaliciousSDSystem_Proc reaches sdreceivedLinkScanRequest;
+#assert MaliciousSDSystem_Proc reaches sdsentLinkScanResponse;
+#assert MaliciousSDSystem_Proc reaches sdreceivedLinkIdentifyRequest;
+#assert MaliciousSDSystem_Proc reaches sdreceivedLinkNetworkJoinRequest;
+#assert MaliciousSDSystem_Proc reaches sdsentLinkNetworkJoinResponse;
+#assert MaliciousHSSystem_Proc reaches hssentRequestSuccess;
+#assert MaliciousCPSystem_Proc reaches cpsentRequestLightResult;
+#assert MaliciousCPSystem_Proc reaches cpreceivedLightNo;
+#assert MaliciousCPSystem_Proc reaches cpreceivedLightName;
+#assert MaliciousHSSystem_Proc reaches hsreceivedRequestLightResult;
+#assert MaliciousCPSystem_Proc reaches cpsentGetInfoRequest;
+#assert MaliciousCPSystem_Proc reaches cpreceivedConfigs;
+#assert MaliciousCPSystem_Proc reaches cpreceivedLights;
+#assert MaliciousCPSystem_Proc reaches cpreceivedWhitelist;
+#assert MaliciousHSSystem_Proc reaches hsreceivedGetInfoRequest;
+#assert MaliciousCPSystem_Proc reaches cpsentDeleteLightRequest;
+#assert MaliciousCPSystem_Proc reaches cpreceivedAdminSuccess;
+#assert MaliciousHSSystem_Proc reaches hsreceivedDeleteLightRequest;
+#assert MaliciousCPSystem_Proc reaches cpsentDeleteUserIDRequest;
+#assert MaliciousHSSystem_Proc reaches hsreceivedDeleteUserIDRequest;
+#assert MaliciousCPSystem_Proc reaches cpsentLinkButtonTrue;
+#assert MaliciousHSSystem_Proc reaches hsreceivedLinkButtonTrue;
+#assert MaliciousCPSystem_Proc reaches cpsentControlcmd;
+#assert MaliciousCPSystem_Proc reaches cpreceivedControlCmdSuccess;
+#assert MaliciousHSSystem_Proc reaches hsreceivedControlcmd;
+#assert MaliciousHSSystem_Proc reaches hssentLightNo;
+#assert MaliciousHSSystem_Proc reaches hssentLightName;
+#assert MaliciousHSSystem_Proc reaches hssentConfigs;
+#assert MaliciousHSSystem_Proc reaches hssentLights;
+#assert MaliciousHSSystem_Proc reaches hssentWhitelist;
+#assert MaliciousHSSystem_Proc reaches hssentAdminSuccess;
+#assert MaliciousHSSystem_Proc reaches hssentNew_DeviceID;
+#assert MaliciousHSSystem_Proc reaches hssentPanID;
+#assert MaliciousHSSystem_Proc reaches hssentEncryptedControlcmd;
+#assert MaliciousHSSystem_Proc reaches hsreceivedHubID;
+#assert MaliciousHSSystem_Proc reaches hsreceivedACK;
+#assert MaliciousHSSystem_Proc reaches hssentControlCmdSuccess;
+#assert MaliciousSDSystem_Proc reaches sdreceivedEncryptedControlcmd;
+#assert MaliciousSDSystem_Proc reaches sdsentACK;
+#assert System reaches netAttsentBeaconRequest;
+#assert System reaches netAttsentPanID;
+#assert System reaches netAttsentHubID;
+#assert System reaches netAttsentDeviceID;
+#assert System reaches netAttsentAssoPermit;
+#assert System reaches netAttsentUPnPMsearchRequest;
+#assert System reaches netAttsentCPIP;
+#assert System reaches netAttsentAttackerIP;
+#assert System reaches netAttsentServerName;
+#assert System reaches netAttsentHubIP;
+#assert System reaches netAttsentSearchLightRequest;
+#assert System reaches netAttsentRequestSuccess;
+#assert System reaches netAttsentScanRequest;
+#assert System reaches netAttsentScanResponse;
+#assert System reaches netAttsentIdentifyRequest;
+#assert System reaches netAttsentNetworkJoinRequest;
+#assert System reaches netAttsentNetworkJoinResponse;
+#assert System reaches netAttsentLinkNetworkJoinResponse;
+#assert System reaches netAttsentJoinNearestDeviceRequest;
+#assert System reaches netAttsentLinkScanRequest;
+#assert System reaches netAttsentLinkScanResponse;
+#assert System reaches netAttsentLinkIdentifyRequest;
+#assert System reaches netAttsentLinkNetworkJoinRequest;
+#assert System reaches netAttsentRequestLightResult;
+#assert System reaches netAttsentLightNo;
+#assert System reaches netAttsentLightName;
+#assert System reaches netAttsentGetInfoRequest;
+#assert System reaches netAttsentConfigs;
+#assert System reaches netAttsentLights;
+#assert System reaches netAttsentWhitelist;
+#assert System reaches netAttsentDeleteLightRequest;
+#assert System reaches netAttsentAdminSuccess;
+#assert System reaches netAttsentDeleteUserIDRequest;
+#assert System reaches netAttsentLinkButtonTrue;
+#assert System reaches netAttsentControlcmd;
+#assert System reaches netAttsentEncryptedControlcmd;
+#assert System reaches netAttsentACK;
+#assert System reaches netAttsentControlCmdSuccess;
+#assert System reaches netAttsentCP;
+#assert System reaches netAttsentHS;
+#assert System reaches netAttsentZFE;
+#assert System reaches netAttsentSD;
+#assert System reaches netAttsentNobody;
+#assert System reaches netAttsentcp_nonce;
+#assert System reaches netAttsentcp_hashed_nonce;
+#assert System reaches netAttsentAttacker_nonce;
+#assert System reaches netAttsentAttacker_hashed_nonce;
+#assert System reaches netAttsentAttackerHubID;
+#assert System reaches netAttsentAttackerDeviceID;
+#assert System reaches netAttsentAttackerHttpReplay;
+var<Knowledge> AutoGeneratedAttackerKnowledge;
+AutoGeneratedNetworkAttacker()= zigbee?msg1->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedNetworkAttacker()
+           []zigbee?msg1.msg2->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedNetworkAttacker()
+           []zigbee?msg1.msg2.msg3->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedNetworkAttacker()
+           []zigbee?msg1.msg2.msg3.msg4->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->AutoGeneratedNetworkAttacker()
+           []attackerBuffer?msg1->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedNetworkAttacker()
+           []attackerBuffer?msg1.msg2->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedNetworkAttacker()
+           []attackerBuffer?msg1.msg2.msg3->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedNetworkAttacker()
+           []attackerBuffer?msg1.msg2.msg3.msg4->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->AutoGeneratedNetworkAttacker()
+           []if (AutoGeneratedAttackerKnowledge.knows(BeaconRequest)==true){zigbee!BeaconRequest-> generatedStatUpdate{netAttsendbeaconrequest=BeaconRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PanID)==true){zigbee!PanID-> generatedStatUpdate{netAttsendpanid=PanID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HubID)==true){zigbee!HubID-> generatedStatUpdate{netAttsendhubid=HubID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceID)==true){zigbee!DeviceID-> generatedStatUpdate{netAttsenddeviceid=DeviceID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AssoPermit)==true){zigbee!AssoPermit-> generatedStatUpdate{netAttsendassopermit=AssoPermit}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(UPnPMsearchRequest)==true){zigbee!UPnPMsearchRequest-> generatedStatUpdate{netAttsendupnpmsearchrequest=UPnPMsearchRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CPIP)==true){zigbee!CPIP-> generatedStatUpdate{netAttsendcpip=CPIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerIP)==true){zigbee!AttackerIP-> generatedStatUpdate{netAttsendattackerip=AttackerIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ServerName)==true){zigbee!ServerName-> generatedStatUpdate{netAttsendservername=ServerName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HubIP)==true){zigbee!HubIP-> generatedStatUpdate{netAttsendhubip=HubIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SearchLightRequest)==true){zigbee!SearchLightRequest-> generatedStatUpdate{netAttsendsearchlightrequest=SearchLightRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(RequestSuccess)==true){zigbee!RequestSuccess-> generatedStatUpdate{netAttsendrequestsuccess=RequestSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScanRequest)==true){zigbee!ScanRequest-> generatedStatUpdate{netAttsendscanrequest=ScanRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScanResponse)==true){zigbee!ScanResponse-> generatedStatUpdate{netAttsendscanresponse=ScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IdentifyRequest)==true){zigbee!IdentifyRequest-> generatedStatUpdate{netAttsendidentifyrequest=IdentifyRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NetworkJoinRequest)==true){zigbee!NetworkJoinRequest-> generatedStatUpdate{netAttsendnetworkjoinrequest=NetworkJoinRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NetworkJoinResponse)==true){zigbee!NetworkJoinResponse-> generatedStatUpdate{netAttsendnetworkjoinresponse=NetworkJoinResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkNetworkJoinResponse)==true){zigbee!LinkNetworkJoinResponse-> generatedStatUpdate{netAttsendlinknetworkjoinresponse=LinkNetworkJoinResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(JoinNearestDeviceRequest)==true){zigbee!JoinNearestDeviceRequest-> generatedStatUpdate{netAttsendjoinnearestdevicerequest=JoinNearestDeviceRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkScanRequest)==true){zigbee!LinkScanRequest-> generatedStatUpdate{netAttsendlinkscanrequest=LinkScanRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkScanResponse)==true){zigbee!LinkScanResponse-> generatedStatUpdate{netAttsendlinkscanresponse=LinkScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkIdentifyRequest)==true){zigbee!LinkIdentifyRequest-> generatedStatUpdate{netAttsendlinkidentifyrequest=LinkIdentifyRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkNetworkJoinRequest)==true){zigbee!LinkNetworkJoinRequest-> generatedStatUpdate{netAttsendlinknetworkjoinrequest=LinkNetworkJoinRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(RequestLightResult)==true){zigbee!RequestLightResult-> generatedStatUpdate{netAttsendrequestlightresult=RequestLightResult}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LightNo)==true){zigbee!LightNo-> generatedStatUpdate{netAttsendlightno=LightNo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LightName)==true){zigbee!LightName-> generatedStatUpdate{netAttsendlightname=LightName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetInfoRequest)==true){zigbee!GetInfoRequest-> generatedStatUpdate{netAttsendgetinforequest=GetInfoRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Configs)==true){zigbee!Configs-> generatedStatUpdate{netAttsendconfigs=Configs}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Lights)==true){zigbee!Lights-> generatedStatUpdate{netAttsendlights=Lights}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Whitelist)==true){zigbee!Whitelist-> generatedStatUpdate{netAttsendwhitelist=Whitelist}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeleteLightRequest)==true){zigbee!DeleteLightRequest-> generatedStatUpdate{netAttsenddeletelightrequest=DeleteLightRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AdminSuccess)==true){zigbee!AdminSuccess-> generatedStatUpdate{netAttsendadminsuccess=AdminSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeleteUserIDRequest)==true){zigbee!DeleteUserIDRequest-> generatedStatUpdate{netAttsenddeleteuseridrequest=DeleteUserIDRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkButtonTrue)==true){zigbee!LinkButtonTrue-> generatedStatUpdate{netAttsendlinkbuttontrue=LinkButtonTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Controlcmd)==true){zigbee!Controlcmd-> generatedStatUpdate{netAttsendcontrolcmd=Controlcmd}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EncryptedControlcmd)==true){zigbee!EncryptedControlcmd-> generatedStatUpdate{netAttsendencryptedcontrolcmd=EncryptedControlcmd}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ACK)==true){zigbee!ACK-> generatedStatUpdate{netAttsendack=ACK}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ControlCmdSuccess)==true){zigbee!ControlCmdSuccess-> generatedStatUpdate{netAttsendcontrolcmdsuccess=ControlCmdSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CP)==true){zigbee!CP-> generatedStatUpdate{netAttsendcp=CP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HS)==true){zigbee!HS-> generatedStatUpdate{netAttsendhs=HS}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ZFE)==true){zigbee!ZFE-> generatedStatUpdate{netAttsendzfe=ZFE}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SD)==true){zigbee!SD-> generatedStatUpdate{netAttsendsd=SD}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Nobody)==true){zigbee!Nobody-> generatedStatUpdate{netAttsendnobody=Nobody}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(cp_nonce)==true){zigbee!cp_nonce-> generatedStatUpdate{netAttsendcp_nonce=cp_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(cp_hashed_nonce)==true){zigbee!cp_hashed_nonce-> generatedStatUpdate{netAttsendcp_hashed_nonce=cp_hashed_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Attacker_nonce)==true){zigbee!Attacker_nonce-> generatedStatUpdate{netAttsendattacker_nonce=Attacker_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Attacker_hashed_nonce)==true){zigbee!Attacker_hashed_nonce-> generatedStatUpdate{netAttsendattacker_hashed_nonce=Attacker_hashed_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerHubID)==true){zigbee!AttackerHubID-> generatedStatUpdate{netAttsendattackerhubid=AttackerHubID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerDeviceID)==true){zigbee!AttackerDeviceID-> generatedStatUpdate{netAttsendattackerdeviceid=AttackerDeviceID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerHttpReplay)==true){zigbee!AttackerHttpReplay-> generatedStatUpdate{netAttsendattackerhttpreplay=AttackerHttpReplay}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BeaconRequest)==true){wifi!BeaconRequest-> generatedStatUpdate{netAttsendbeaconrequest=BeaconRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PanID)==true){wifi!PanID-> generatedStatUpdate{netAttsendpanid=PanID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HubID)==true){wifi!HubID-> generatedStatUpdate{netAttsendhubid=HubID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceID)==true){wifi!DeviceID-> generatedStatUpdate{netAttsenddeviceid=DeviceID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AssoPermit)==true){wifi!AssoPermit-> generatedStatUpdate{netAttsendassopermit=AssoPermit}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(UPnPMsearchRequest)==true){wifi!UPnPMsearchRequest-> generatedStatUpdate{netAttsendupnpmsearchrequest=UPnPMsearchRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CPIP)==true){wifi!CPIP-> generatedStatUpdate{netAttsendcpip=CPIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerIP)==true){wifi!AttackerIP-> generatedStatUpdate{netAttsendattackerip=AttackerIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ServerName)==true){wifi!ServerName-> generatedStatUpdate{netAttsendservername=ServerName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HubIP)==true){wifi!HubIP-> generatedStatUpdate{netAttsendhubip=HubIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SearchLightRequest)==true){wifi!SearchLightRequest-> generatedStatUpdate{netAttsendsearchlightrequest=SearchLightRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(RequestSuccess)==true){wifi!RequestSuccess-> generatedStatUpdate{netAttsendrequestsuccess=RequestSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScanRequest)==true){wifi!ScanRequest-> generatedStatUpdate{netAttsendscanrequest=ScanRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScanResponse)==true){wifi!ScanResponse-> generatedStatUpdate{netAttsendscanresponse=ScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IdentifyRequest)==true){wifi!IdentifyRequest-> generatedStatUpdate{netAttsendidentifyrequest=IdentifyRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NetworkJoinRequest)==true){wifi!NetworkJoinRequest-> generatedStatUpdate{netAttsendnetworkjoinrequest=NetworkJoinRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NetworkJoinResponse)==true){wifi!NetworkJoinResponse-> generatedStatUpdate{netAttsendnetworkjoinresponse=NetworkJoinResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkNetworkJoinResponse)==true){wifi!LinkNetworkJoinResponse-> generatedStatUpdate{netAttsendlinknetworkjoinresponse=LinkNetworkJoinResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(JoinNearestDeviceRequest)==true){wifi!JoinNearestDeviceRequest-> generatedStatUpdate{netAttsendjoinnearestdevicerequest=JoinNearestDeviceRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkScanRequest)==true){wifi!LinkScanRequest-> generatedStatUpdate{netAttsendlinkscanrequest=LinkScanRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkScanResponse)==true){wifi!LinkScanResponse-> generatedStatUpdate{netAttsendlinkscanresponse=LinkScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkIdentifyRequest)==true){wifi!LinkIdentifyRequest-> generatedStatUpdate{netAttsendlinkidentifyrequest=LinkIdentifyRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkNetworkJoinRequest)==true){wifi!LinkNetworkJoinRequest-> generatedStatUpdate{netAttsendlinknetworkjoinrequest=LinkNetworkJoinRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(RequestLightResult)==true){wifi!RequestLightResult-> generatedStatUpdate{netAttsendrequestlightresult=RequestLightResult}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LightNo)==true){wifi!LightNo-> generatedStatUpdate{netAttsendlightno=LightNo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LightName)==true){wifi!LightName-> generatedStatUpdate{netAttsendlightname=LightName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetInfoRequest)==true){wifi!GetInfoRequest-> generatedStatUpdate{netAttsendgetinforequest=GetInfoRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Configs)==true){wifi!Configs-> generatedStatUpdate{netAttsendconfigs=Configs}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Lights)==true){wifi!Lights-> generatedStatUpdate{netAttsendlights=Lights}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Whitelist)==true){wifi!Whitelist-> generatedStatUpdate{netAttsendwhitelist=Whitelist}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeleteLightRequest)==true){wifi!DeleteLightRequest-> generatedStatUpdate{netAttsenddeletelightrequest=DeleteLightRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AdminSuccess)==true){wifi!AdminSuccess-> generatedStatUpdate{netAttsendadminsuccess=AdminSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeleteUserIDRequest)==true){wifi!DeleteUserIDRequest-> generatedStatUpdate{netAttsenddeleteuseridrequest=DeleteUserIDRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkButtonTrue)==true){wifi!LinkButtonTrue-> generatedStatUpdate{netAttsendlinkbuttontrue=LinkButtonTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Controlcmd)==true){wifi!Controlcmd-> generatedStatUpdate{netAttsendcontrolcmd=Controlcmd}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EncryptedControlcmd)==true){wifi!EncryptedControlcmd-> generatedStatUpdate{netAttsendencryptedcontrolcmd=EncryptedControlcmd}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ACK)==true){wifi!ACK-> generatedStatUpdate{netAttsendack=ACK}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ControlCmdSuccess)==true){wifi!ControlCmdSuccess-> generatedStatUpdate{netAttsendcontrolcmdsuccess=ControlCmdSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CP)==true){wifi!CP-> generatedStatUpdate{netAttsendcp=CP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HS)==true){wifi!HS-> generatedStatUpdate{netAttsendhs=HS}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ZFE)==true){wifi!ZFE-> generatedStatUpdate{netAttsendzfe=ZFE}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SD)==true){wifi!SD-> generatedStatUpdate{netAttsendsd=SD}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Nobody)==true){wifi!Nobody-> generatedStatUpdate{netAttsendnobody=Nobody}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(cp_nonce)==true){wifi!cp_nonce-> generatedStatUpdate{netAttsendcp_nonce=cp_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(cp_hashed_nonce)==true){wifi!cp_hashed_nonce-> generatedStatUpdate{netAttsendcp_hashed_nonce=cp_hashed_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Attacker_nonce)==true){wifi!Attacker_nonce-> generatedStatUpdate{netAttsendattacker_nonce=Attacker_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Attacker_hashed_nonce)==true){wifi!Attacker_hashed_nonce-> generatedStatUpdate{netAttsendattacker_hashed_nonce=Attacker_hashed_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerHubID)==true){wifi!AttackerHubID-> generatedStatUpdate{netAttsendattackerhubid=AttackerHubID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerDeviceID)==true){wifi!AttackerDeviceID-> generatedStatUpdate{netAttsendattackerdeviceid=AttackerDeviceID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerHttpReplay)==true){wifi!AttackerHttpReplay-> generatedStatUpdate{netAttsendattackerhttpreplay=AttackerHttpReplay}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BeaconRequest)==true){attackerBuffer!BeaconRequest-> generatedStatUpdate{netAttsendbeaconrequest=BeaconRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PanID)==true){attackerBuffer!PanID-> generatedStatUpdate{netAttsendpanid=PanID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HubID)==true){attackerBuffer!HubID-> generatedStatUpdate{netAttsendhubid=HubID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceID)==true){attackerBuffer!DeviceID-> generatedStatUpdate{netAttsenddeviceid=DeviceID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AssoPermit)==true){attackerBuffer!AssoPermit-> generatedStatUpdate{netAttsendassopermit=AssoPermit}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(UPnPMsearchRequest)==true){attackerBuffer!UPnPMsearchRequest-> generatedStatUpdate{netAttsendupnpmsearchrequest=UPnPMsearchRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CPIP)==true){attackerBuffer!CPIP-> generatedStatUpdate{netAttsendcpip=CPIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerIP)==true){attackerBuffer!AttackerIP-> generatedStatUpdate{netAttsendattackerip=AttackerIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ServerName)==true){attackerBuffer!ServerName-> generatedStatUpdate{netAttsendservername=ServerName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HubIP)==true){attackerBuffer!HubIP-> generatedStatUpdate{netAttsendhubip=HubIP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SearchLightRequest)==true){attackerBuffer!SearchLightRequest-> generatedStatUpdate{netAttsendsearchlightrequest=SearchLightRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(RequestSuccess)==true){attackerBuffer!RequestSuccess-> generatedStatUpdate{netAttsendrequestsuccess=RequestSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScanRequest)==true){attackerBuffer!ScanRequest-> generatedStatUpdate{netAttsendscanrequest=ScanRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScanResponse)==true){attackerBuffer!ScanResponse-> generatedStatUpdate{netAttsendscanresponse=ScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IdentifyRequest)==true){attackerBuffer!IdentifyRequest-> generatedStatUpdate{netAttsendidentifyrequest=IdentifyRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NetworkJoinRequest)==true){attackerBuffer!NetworkJoinRequest-> generatedStatUpdate{netAttsendnetworkjoinrequest=NetworkJoinRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NetworkJoinResponse)==true){attackerBuffer!NetworkJoinResponse-> generatedStatUpdate{netAttsendnetworkjoinresponse=NetworkJoinResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkNetworkJoinResponse)==true){attackerBuffer!LinkNetworkJoinResponse-> generatedStatUpdate{netAttsendlinknetworkjoinresponse=LinkNetworkJoinResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(JoinNearestDeviceRequest)==true){attackerBuffer!JoinNearestDeviceRequest-> generatedStatUpdate{netAttsendjoinnearestdevicerequest=JoinNearestDeviceRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkScanRequest)==true){attackerBuffer!LinkScanRequest-> generatedStatUpdate{netAttsendlinkscanrequest=LinkScanRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkScanResponse)==true){attackerBuffer!LinkScanResponse-> generatedStatUpdate{netAttsendlinkscanresponse=LinkScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkIdentifyRequest)==true){attackerBuffer!LinkIdentifyRequest-> generatedStatUpdate{netAttsendlinkidentifyrequest=LinkIdentifyRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkNetworkJoinRequest)==true){attackerBuffer!LinkNetworkJoinRequest-> generatedStatUpdate{netAttsendlinknetworkjoinrequest=LinkNetworkJoinRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(RequestLightResult)==true){attackerBuffer!RequestLightResult-> generatedStatUpdate{netAttsendrequestlightresult=RequestLightResult}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LightNo)==true){attackerBuffer!LightNo-> generatedStatUpdate{netAttsendlightno=LightNo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LightName)==true){attackerBuffer!LightName-> generatedStatUpdate{netAttsendlightname=LightName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetInfoRequest)==true){attackerBuffer!GetInfoRequest-> generatedStatUpdate{netAttsendgetinforequest=GetInfoRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Configs)==true){attackerBuffer!Configs-> generatedStatUpdate{netAttsendconfigs=Configs}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Lights)==true){attackerBuffer!Lights-> generatedStatUpdate{netAttsendlights=Lights}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Whitelist)==true){attackerBuffer!Whitelist-> generatedStatUpdate{netAttsendwhitelist=Whitelist}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeleteLightRequest)==true){attackerBuffer!DeleteLightRequest-> generatedStatUpdate{netAttsenddeletelightrequest=DeleteLightRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AdminSuccess)==true){attackerBuffer!AdminSuccess-> generatedStatUpdate{netAttsendadminsuccess=AdminSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeleteUserIDRequest)==true){attackerBuffer!DeleteUserIDRequest-> generatedStatUpdate{netAttsenddeleteuseridrequest=DeleteUserIDRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LinkButtonTrue)==true){attackerBuffer!LinkButtonTrue-> generatedStatUpdate{netAttsendlinkbuttontrue=LinkButtonTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Controlcmd)==true){attackerBuffer!Controlcmd-> generatedStatUpdate{netAttsendcontrolcmd=Controlcmd}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EncryptedControlcmd)==true){attackerBuffer!EncryptedControlcmd-> generatedStatUpdate{netAttsendencryptedcontrolcmd=EncryptedControlcmd}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ACK)==true){attackerBuffer!ACK-> generatedStatUpdate{netAttsendack=ACK}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ControlCmdSuccess)==true){attackerBuffer!ControlCmdSuccess-> generatedStatUpdate{netAttsendcontrolcmdsuccess=ControlCmdSuccess}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CP)==true){attackerBuffer!CP-> generatedStatUpdate{netAttsendcp=CP}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HS)==true){attackerBuffer!HS-> generatedStatUpdate{netAttsendhs=HS}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ZFE)==true){attackerBuffer!ZFE-> generatedStatUpdate{netAttsendzfe=ZFE}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SD)==true){attackerBuffer!SD-> generatedStatUpdate{netAttsendsd=SD}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Nobody)==true){attackerBuffer!Nobody-> generatedStatUpdate{netAttsendnobody=Nobody}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(cp_nonce)==true){attackerBuffer!cp_nonce-> generatedStatUpdate{netAttsendcp_nonce=cp_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(cp_hashed_nonce)==true){attackerBuffer!cp_hashed_nonce-> generatedStatUpdate{netAttsendcp_hashed_nonce=cp_hashed_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Attacker_nonce)==true){attackerBuffer!Attacker_nonce-> generatedStatUpdate{netAttsendattacker_nonce=Attacker_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Attacker_hashed_nonce)==true){attackerBuffer!Attacker_hashed_nonce-> generatedStatUpdate{netAttsendattacker_hashed_nonce=Attacker_hashed_nonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerHubID)==true){attackerBuffer!AttackerHubID-> generatedStatUpdate{netAttsendattackerhubid=AttackerHubID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerDeviceID)==true){attackerBuffer!AttackerDeviceID-> generatedStatUpdate{netAttsendattackerdeviceid=AttackerDeviceID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AttackerHttpReplay)==true){attackerBuffer!AttackerHttpReplay-> generatedStatUpdate{netAttsendattackerhttpreplay=AttackerHttpReplay}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()};

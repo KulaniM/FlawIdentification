@@ -51,3 +51,30 @@ C:\Users\Fuqiang\Documents\Visual Studio 2015\Projects\UI\UI\obj\Release\UI_Mark
 C:\Users\Fuqiang\Documents\Visual Studio 2015\Projects\UI\UI\obj\Release\UI.g.resources
 C:\Users\Fuqiang\Documents\Visual Studio 2015\Projects\UI\UI\obj\Release\UI.Properties.Resources.resources
 C:\Users\Fuqiang\Documents\Visual Studio 2015\Projects\UI\UI\obj\Release\UI.csproj.GenerateResource.Cache
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\UI.exe.config
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\UI.exe
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\UI.pdb
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\Microsoft.VisualStudio.TextTemplating.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\PAT.Editor.Docking.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\Antlr3.Runtime.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\Microsoft.Msagl.Drawing.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\Microsoft.Msagl.GraphViewerGdi.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\Microsoft.Msagl.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\de\PAT.Common.resources.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\ja\PAT.Common.resources.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\ko\PAT.Common.resources.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\vi\PAT.Common.resources.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\zh-CHS\PAT.Common.resources.dll
+C:\Users\HP-PC\source\HomeScan\UI\bin\Release\zh-CHT\PAT.Common.resources.dll
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.csprojAssemblyReference.cache
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\MainWindow.baml
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\MainWindow.g.cs
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\App.g.cs
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI_MarkupCompile.cache
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.g.resources
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.Properties.Resources.resources
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.csproj.GenerateResource.cache
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.csproj.CoreCompileInputs.cache
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.csproj.CopyComplete
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.exe
+C:\Users\HP-PC\source\HomeScan\UI\obj\Release\UI.pdb

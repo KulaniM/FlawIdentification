@@ -1,0 +1,1230 @@
+#import "Lib_HomeScan";
+enum{ChromecastWiFiBeacon, ChromecastSSID, ChromecastBSSID, OpenSystemAuthenticationRequest, AssociationResponse, GetEurekaInfo, EurekaInfo,NewNonce, Name,SetupState,EthernetConnected,IPaddress,SsdpUdn,ModelName,DeviceCapabilities,SSIDSuffix,TosAccepted,BSSID,SDPublicKey,Certificate,IntermediateCerts,SignedData,PostScanWifi, SuccessScanResponse, GetScanResults,HomeWifiSSID, HomeWifiBSSID, Frequency, SignalLevel, WPAAuth7, WPACipher4, PostConnectWifi, Password, EncryptedPassword, Test, SuccessConnectRequest,NewIPAddress,Version,NewSetupState, PostSetEurekaInfo,NewName,OptInStatusTrue, SuccessSetRequest, PostSaveWifi, ImmediateTrue, SuccessSaveRequest,MDNSDiscoveryRequest, MDNSDiscoveryResponse, ValidScreenID, GetMdxSessionStatus, ScreenID, GetLoungeToken, Expiration,ScreenIDAssociation, GetScreenAvailability, AvailabilityResponse, PostBindRequest, Device,ID,ControlPointName,AppName, MethodSetPlayList, VideoID, CurrentVideoID, SID, GsessionID, LoungeStatus, PlaylistModified,OnAutoplayModeChanged, OnPlaylistModeChanged, SignRParam,VersionRParam,NameRParam,SetupStateRParam,EthernetConnectedRParam,IPaddressRParam,SsdpUdnRParam,ModelNameRParam,DeviceCapabilitiesRParam,SSIDSuffixRParam,TosAcceptedRParam,PublicKeyRParam,BSSIDRParam,Aenc, Adec, SDPrivateKey};
+channel wifi0 0;
+channel openwifi 0;
+channel wifi 0;
+#define NONCE_LOWER_BOUND_INCLUSIVE 0;
+#define NONCE_UPPER_BOUND_INCLUSIVE 2;
+var sdReceivedNonce = -1;
+var sdReceivedPassword = -1;
+SD() = SDBroadcastWiFiBeacon();
+SDBroadcastWiFiBeacon() = wifi0!ChromecastWiFiBeacon.ChromecastSSID.ChromecastBSSID->(SDReceiveAuthRequest() [] SDBroadcastWiFiBeacon());
+SDReceiveAuthRequest() = wifi0?ChromecastSSID.OpenSystemAuthenticationRequest -> SDSendAssociationResponse();
+SDSendAssociationResponse() = wifi0!AssociationResponse -> SDReceiveEurekaInfoRequest();
+SDReceiveEurekaInfoRequest() =openwifi?GetEurekaInfo.SignRParam.VersionRParam.NameRParam.SetupStateRParam.EthernetConnectedRParam.IPaddressRParam.SsdpUdnRParam.ModelNameRParam.DeviceCapabilitiesRParam.SSIDSuffixRParam.TosAcceptedRParam.PublicKeyRParam.BSSIDRParam.newNonce-> saveNonce{sdReceivedNonce = newNonce}-> SDSendEurekaInfo();
+SDSendEurekaInfo() =openwifi!EurekaInfo.Version.Name.SetupState.EthernetConnected.IPaddress.SsdpUdn.ModelName.DeviceCapabilities.SSIDSuffix.TosAccepted.BSSID.SDPublicKey.Certificate.IntermediateCerts.SignedData.sdReceivedNonce-> (SDReceivePostScanWifi() [] SDReceiveEurekaInfoRequest());
+SDReceivePostScanWifi() = openwifi?PostScanWifi -> SDSendSuccessScanResponse();
+SDSendSuccessScanResponse() = openwifi!SuccessScanResponse -> (SDReceivePostScanWifi() [] SDReceiveGetScanResults());
+SDReceiveGetScanResults() = openwifi?GetScanResults -> SDSendScanResults();
+SDSendScanResults() = openwifi!HomeWifiSSID.HomeWifiBSSID.Frequency.SignalLevel.WPAAuth7.WPACipher4 -> (SDReceiveGetScanResults() [] SDReceivePostConnectWifi());
+SDReceivePostConnectWifi() = openwifi?PostConnectWifi.HomeWifiSSID.Aenc.password.PublicKey.WPAAuth7.WPACipher4-> savePassword{sdReceivedPassword = password}-> SDSendSuccessConnectRequest();
+SDSendSuccessConnectRequest() =adec.sdReceivedPassword.SDPublicKey.SDPrivateKey-> openwifi!SuccessConnectRequest.Adec.sdReceivedPassword.SDPublicKey.SDPrivateKey-> SDReceiveGetEurekaInfo2();
+SDReceiveGetEurekaInfo2() = openwifi?GetEurekaInfo.IPaddressRParam.VersionRParam.SetupStateRParam -> SDSendEurekaInfo2();
+SDSendEurekaInfo2() = openwifi!NewIPAddress.Version.NewSetupState -> SDReceivePostSetEurekaInfo();
+SDReceivePostSetEurekaInfo() = openwifi?PostSetEurekaInfo.NewName.OptInStatusTrue -> SDSendSuccessSetRequest();
+SDSendSuccessSetRequest() = openwifi!SuccessSetRequest -> (SDReceivePostSetEurekaInfo() [] SDReceivePostSaveWifi());
+SDReceivePostSaveWifi() = openwifi?PostSaveWifi.ImmediateTrue -> SDSendSuccessSaveRequest();
+SDSendSuccessSaveRequest() = openwifi!SuccessSaveRequest -> SDReceiveMDNSDiscoveryRequest();
+SDReceiveMDNSDiscoveryRequest() = wifi?MDNSDiscoveryRequest -> (SDReceiveMDNSDiscoveryRequest() [] SDSendMDNSDiscoveryResponse());
+SDSendMDNSDiscoveryResponse() = wifi!MDNSDiscoveryResponse -> SDSendValidScreenID();
+SDSendValidScreenID() = wifi!ValidScreenID -> SDReceiveGetMdxSessionStatus();
+SDReceiveGetMdxSessionStatus() = wifi?GetMdxSessionStatus -> SDSendScreenID();
+SDSendScreenID() = wifi!ScreenID -> Skip();
+var cpNonce : {NONCE_LOWER_BOUND_INCLUSIVE..NONCE_UPPER_BOUND_INCLUSIVE} = NONCE_LOWER_BOUND_INCLUSIVE;
+var cpSavedSDPublicKey = -1;
+var encryptedPassword = -1;
+CP() = CPReceiveWiFiBeacon();
+CPReceiveWiFiBeacon() = wifi0?ChromecastWiFiBeacon.ChromecastSSID.ChromecastBSSID-> CPSendAuthRequest();
+CPSendAuthRequest() = wifi0!ChromecastSSID.OpenSystemAuthenticationRequest-> CPReceiveAssociationResponse();
+CPReceiveAssociationResponse() = wifi0?assocResponse-> CPSendGetEurekaInfo;
+CPSendGetEurekaInfo() = generateNewCPNonce{cpNonce = (cpNonce + 1) % (NONCE_UPPER_BOUND_INCLUSIVE + 1)} ->openwifi!GetEurekaInfo.SignRParam.VersionRParam.NameRParam.SetupStateRParam.EthernetConnectedRParam.IPaddressRParam.SsdpUdnRParam.ModelNameRParam.DeviceCapabilitiesRParam.SSIDSuffixRParam.TosAcceptedRParam.PublicKeyRParam.BSSIDRParam.cpNonce-> CPReceiveCerts();
+CPReceiveCerts() = openwifi?[nonce == cpNonce && certificate == Certificate]EurekaInfo.Version.Name.SetupState.EthernetConnected.IPaddress.SsdpUdn.ModelName.DeviceCapabilities.SSIDSuffix.TosAccepted.BSSID.publicKey.certificate.IntermediateCerts.SignedData.nonce-> verify{cpSavedSDPublicKey = publicKey}-> (CPSendGetEurekaInfo() [] CPSendPostScanWifi());
+CPSendPostScanWifi() = openwifi!PostScanWifi -> CPReceiveSuccessScanResponse();
+CPReceiveSuccessScanResponse() = openwifi?SuccessScanResponse -> (CPSendGetScanResults() [] CPSendPostScanWifi());
+CPSendGetScanResults() = openwifi!GetScanResults -> CPReceiveScanResults();
+CPReceiveScanResults() = openwifi?homeWifiSSID.homeWifiBSSID.frequency.signalLevel.wpaAuth7.wpaCipher4 ->(CPSendGetScanResults() [] CPSendPostConnectWifi(homeWifiSSID, wpaAuth7, wpaCipher4));
+CPSendPostConnectWifi(homeWifiSSID, wpaAuth7, wpaCipher4) =aenc.Password.cpSavedSDPublicKey ->openwifi!PostConnectWifi.homeWifiSSID.Aenc.Password.cpSavedSDPublicKey.wpaAuth7.wpaCipher4 -> CPReceiveSuccessConnectRequest();
+CPReceiveSuccessConnectRequest() = successConn -> openwifi?SuccessConnectRequest.Adec.Password.SDPublicKey.SDPrivateKey-> CPSendGetEurekaInfo2();
+CPSendGetEurekaInfo2() = openwifi!GetEurekaInfo.IPaddressRParam.VersionRParam.SetupStateRParam  -> CPReceiveEurekaInfo2();
+CPReceiveEurekaInfo2() = openwifi?NewIPAddress.Version.NewSetupState -> CPSendPostSetEurekaInfo();
+CPSendPostSetEurekaInfo() = openwifi!PostSetEurekaInfo.NewName.OptInStatusTrue -> CPReceiveSuccessSetRequest();
+CPReceiveSuccessSetRequest() = openwifi?SuccessSetRequest -> (CPSendPostSetEurekaInfo() [] CPSendPostSaveWifi());
+CPSendPostSaveWifi() = openwifi!PostSaveWifi.ImmediateTrue -> CPReceiveSuccessSaveRequest();
+CPReceiveSuccessSaveRequest() = openwifi?SuccessSaveRequest -> CPSendMDNSDiscoveryRequest();
+CPSendMDNSDiscoveryRequest() = wifi!MDNSDiscoveryRequest -> (CPSendMDNSDiscoveryRequest() [] CPReceiveMDNSDiscoveryResponse());
+CPReceiveMDNSDiscoveryResponse() = wifi?MDNSDiscoveryResponse -> CPSendGetMdxSessionStatus();
+CPSendGetMdxSessionStatus() = wifi!GetMdxSessionStatus -> CPReceiveScreenID();
+CPReceiveScreenID() = wifi?ScreenID -> CPSendGetLoungeToken();
+CPSendGetLoungeToken() = wifi!GetLoungeToken.ScreenID -> CPReceiveAssociation();
+CPReceiveAssociation() = wifi?ScreenIDAssociation.Expiration.ScreenID -> (CPSendGetScreenAvailability() [] CPSendPostBindRequest());
+CPSendGetScreenAvailability() = wifi!GetScreenAvailability.ScreenIDAssociation -> CPReceiveAvailabilityResponse();
+CPReceiveAvailabilityResponse() = wifi?AvailabilityResponse.ScreenIDAssociation -> (CPSendGetScreenAvailability() [] CPSendPostBindRequest());
+CPSendPostBindRequest() = wifi!PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList.VideoID -> CPReceiveCurrentVideoID();
+CPReceiveCurrentVideoID() = wifi?CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->(CPSendPostBindRequest() [] CPSendPostBindRequestWithoutVideoID());
+CPSendPostBindRequestWithoutVideoID() = wifi!PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList -> CPReceiveCurrentVideoIDWithoutStreaming();
+CPReceiveCurrentVideoIDWithoutStreaming() = wifi?CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->(CPSendPostBindRequestWithoutVideoID() [] Skip());
+GS() = GSReceiveValidScreenID();
+GSReceiveValidScreenID() = wifi?ValidScreenID -> GSReceiveGetLoungeToken();
+GSReceiveGetLoungeToken() = wifi?GetLoungeToken.screenID -> GSSendAssociation();
+GSSendAssociation() = wifi!ScreenIDAssociation.Expiration.ScreenID-> saveMapScreenIDAndAssociation-> (GSReceiveGetScreenAvailability() [] GSReceivePostBindRequest());
+GSReceiveGetScreenAvailability() = wifi?GetScreenAvailability.ScreenIDAssociation -> verifyAssociation1 -> GSSendAvailabilityResponse();
+GSSendAvailabilityResponse() = wifi!AvailabilityResponse.ScreenIDAssociation -> (GSReceiveGetScreenAvailability() [] GSReceivePostBindRequest());
+GSReceivePostBindRequest() = wifi?PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList.VideoID -> verifyAssociation2 -> GSSendCurrentVideoID();
+GSSendCurrentVideoID() = gsStreamVideo -> wifi!CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->(GSReceivePostBindRequest() [] GSReceivePostBindRequestWithoutVideoID());
+GSReceivePostBindRequestWithoutVideoID() = wifi?PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList -> verifyAssociation -> GSSendCurrentVideoIDWithoutStreaming();
+GSSendCurrentVideoIDWithoutStreaming() = wifi!CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged ->(GSReceivePostBindRequestWithoutVideoID() [] Skip());
+System =AutoGeneratedNetworkAttacker() ||| CP() ||| SD() ||| GS();// 
+#assert System deadlockfree;
+#define x sdReceivedNonce > -1;
+#assert System reaches x ;
+var attsdsendchromecastwifibeacon = -1;
+var attsdsendchromecastssid = -1;
+var attsdsendchromecastbssid = -1;
+var attsdrecvchromecastssid = -1;
+var attsdrecvopensystemauthenticationrequest = -1;
+var attsdsendassociationresponse = -1;
+var attsdrecvgeteurekainfo = -1;
+var attsdrecvsignrparam = -1;
+var attsdrecvversionrparam = -1;
+var attsdrecvnamerparam = -1;
+var attsdrecvsetupstaterparam = -1;
+var attsdrecvethernetconnectedrparam = -1;
+var attsdrecvipaddressrparam = -1;
+var attsdrecvssdpudnrparam = -1;
+var attsdrecvmodelnamerparam = -1;
+var attsdrecvdevicecapabilitiesrparam = -1;
+var attsdrecvssidsuffixrparam = -1;
+var attsdrecvtosacceptedrparam = -1;
+var attsdrecvpublickeyrparam = -1;
+var attsdrecvbssidrparam = -1;
+var attsdrecvnewnonce = -1;
+var attsdsendeurekainfo = -1;
+var attsdsendversion = -1;
+var attsdsendname = -1;
+var attsdsendsetupstate = -1;
+var attsdsendethernetconnected = -1;
+var attsdsendipaddress = -1;
+var attsdsendssdpudn = -1;
+var attsdsendmodelname = -1;
+var attsdsenddevicecapabilities = -1;
+var attsdsendssidsuffix = -1;
+var attsdsendtosaccepted = -1;
+var attsdsendbssid = -1;
+var attsdsendsdpublickey = -1;
+var attsdsendcertificate = -1;
+var attsdsendintermediatecerts = -1;
+var attsdsendsigneddata = -1;
+var attsdsendsdreceivednonce = -1;
+var attsdrecvpostscanwifi = -1;
+var attsdsendsuccessscanresponse = -1;
+var attsdrecvgetscanresults = -1;
+var attsdsendhomewifissid = -1;
+var attsdsendhomewifibssid = -1;
+var attsdsendfrequency = -1;
+var attsdsendsignallevel = -1;
+var attsdsendwpaauth7 = -1;
+var attsdsendwpacipher4 = -1;
+var attsdrecvpostconnectwifi = -1;
+var attsdrecvhomewifissid = -1;
+var attsdrecvaenc = -1;
+var attsdrecvpassword = -1;
+var attsdrecvpublickey = -1;
+var attsdrecvwpaauth7 = -1;
+var attsdrecvwpacipher4 = -1;
+var attsdsendsuccessconnectrequest = -1;
+var attsdsendadec = -1;
+var attsdsendsdreceivedpassword = -1;
+var attsdsendsdprivatekey = -1;
+var attsdsendnewipaddress = -1;
+var attsdsendnewsetupstate = -1;
+var attsdrecvpostseteurekainfo = -1;
+var attsdrecvnewname = -1;
+var attsdrecvoptinstatustrue = -1;
+var attsdsendsuccesssetrequest = -1;
+var attsdrecvpostsavewifi = -1;
+var attsdrecvimmediatetrue = -1;
+var attsdsendsuccesssaverequest = -1;
+var attsdrecvmdnsdiscoveryrequest = -1;
+var attsdsendmdnsdiscoveryresponse = -1;
+var attsdsendvalidscreenid = -1;
+var attsdrecvgetmdxsessionstatus = -1;
+var attsdsendscreenid = -1;
+var attcprecvchromecastwifibeacon = -1;
+var attcprecvchromecastssid = -1;
+var attcprecvchromecastbssid = -1;
+var attcpsendchromecastssid = -1;
+var attcpsendopensystemauthenticationrequest = -1;
+var attcprecvassocresponse = -1;
+var attcpsendgeteurekainfo = -1;
+var attcpsendsignrparam = -1;
+var attcpsendversionrparam = -1;
+var attcpsendnamerparam = -1;
+var attcpsendsetupstaterparam = -1;
+var attcpsendethernetconnectedrparam = -1;
+var attcpsendipaddressrparam = -1;
+var attcpsendssdpudnrparam = -1;
+var attcpsendmodelnamerparam = -1;
+var attcpsenddevicecapabilitiesrparam = -1;
+var attcpsendssidsuffixrparam = -1;
+var attcpsendtosacceptedrparam = -1;
+var attcpsendpublickeyrparam = -1;
+var attcpsendbssidrparam = -1;
+var attcpsendcpnonce = -1;
+var attcpsendpostscanwifi = -1;
+var attcprecvsuccessscanresponse = -1;
+var attcpsendgetscanresults = -1;
+var attcprecvhomewifissid = -1;
+var attcprecvhomewifibssid = -1;
+var attcprecvfrequency = -1;
+var attcprecvsignallevel = -1;
+var attcprecvwpaauth7 = -1;
+var attcprecvwpacipher4 = -1;
+var attcpsendpostconnectwifi = -1;
+var attcpsendhomewifissid = -1;
+var attcpsendaenc = -1;
+var attcpsendpassword = -1;
+var attcpsendcpsavedsdpublickey = -1;
+var attcpsendwpaauth7 = -1;
+var attcpsendwpacipher4 = -1;
+var attcprecvsuccessconnectrequest = -1;
+var attcprecvadec = -1;
+var attcprecvpassword = -1;
+var attcprecvsdpublickey = -1;
+var attcprecvsdprivatekey = -1;
+var attcprecvnewipaddress = -1;
+var attcprecvversion = -1;
+var attcprecvnewsetupstate = -1;
+var attcpsendpostseteurekainfo = -1;
+var attcpsendnewname = -1;
+var attcpsendoptinstatustrue = -1;
+var attcprecvsuccesssetrequest = -1;
+var attcpsendpostsavewifi = -1;
+var attcpsendimmediatetrue = -1;
+var attcprecvsuccesssaverequest = -1;
+var attcpsendmdnsdiscoveryrequest = -1;
+var attcprecvmdnsdiscoveryresponse = -1;
+var attcpsendgetmdxsessionstatus = -1;
+var attcprecvscreenid = -1;
+var attcpsendgetloungetoken = -1;
+var attcpsendscreenid = -1;
+var attcprecvscreenidassociation = -1;
+var attcprecvexpiration = -1;
+var attcpsendgetscreenavailability = -1;
+var attcpsendscreenidassociation = -1;
+var attcprecvavailabilityresponse = -1;
+var attcpsendpostbindrequest = -1;
+var attcpsenddevice = -1;
+var attcpsendid = -1;
+var attcpsendcontrolpointname = -1;
+var attcpsendappname = -1;
+var attcpsendmethodsetplaylist = -1;
+var attcpsendvideoid = -1;
+var attcprecvcurrentvideoid = -1;
+var attcprecvsid = -1;
+var attcprecvgsessionid = -1;
+var attcprecvloungestatus = -1;
+var attcprecvplaylistmodified = -1;
+var attcprecvonautoplaymodechanged = -1;
+var attcprecvonplaylistmodechanged = -1;
+var attgsrecvvalidscreenid = -1;
+var attgsrecvgetloungetoken = -1;
+var attgsrecvscreenid = -1;
+var attgssendscreenidassociation = -1;
+var attgssendexpiration = -1;
+var attgssendscreenid = -1;
+var attgsrecvgetscreenavailability = -1;
+var attgsrecvscreenidassociation = -1;
+var attgssendavailabilityresponse = -1;
+var attgsrecvpostbindrequest = -1;
+var attgsrecvdevice = -1;
+var attgsrecvid = -1;
+var attgsrecvcontrolpointname = -1;
+var attgsrecvappname = -1;
+var attgsrecvmethodsetplaylist = -1;
+var attgsrecvvideoid = -1;
+var attgssendcurrentvideoid = -1;
+var attgssendsid = -1;
+var attgssendgsessionid = -1;
+var attgssendloungestatus = -1;
+var attgssendplaylistmodified = -1;
+var attgssendonautoplaymodechanged = -1;
+var attgssendonplaylistmodechanged = -1;
+var netAttsendchromecastwifibeacon = -1;
+var netAttsendchromecastssid = -1;
+var netAttsendchromecastbssid = -1;
+var netAttsendopensystemauthenticationrequest = -1;
+var netAttsendassociationresponse = -1;
+var netAttsendgeteurekainfo = -1;
+var netAttsendeurekainfo = -1;
+var netAttsendnewnonce = -1;
+var netAttsendname = -1;
+var netAttsendsetupstate = -1;
+var netAttsendethernetconnected = -1;
+var netAttsendipaddress = -1;
+var netAttsendssdpudn = -1;
+var netAttsendmodelname = -1;
+var netAttsenddevicecapabilities = -1;
+var netAttsendssidsuffix = -1;
+var netAttsendtosaccepted = -1;
+var netAttsendbssid = -1;
+var netAttsendsdpublickey = -1;
+var netAttsendcertificate = -1;
+var netAttsendintermediatecerts = -1;
+var netAttsendsigneddata = -1;
+var netAttsendpostscanwifi = -1;
+var netAttsendsuccessscanresponse = -1;
+var netAttsendgetscanresults = -1;
+var netAttsendhomewifissid = -1;
+var netAttsendhomewifibssid = -1;
+var netAttsendfrequency = -1;
+var netAttsendsignallevel = -1;
+var netAttsendwpaauth7 = -1;
+var netAttsendwpacipher4 = -1;
+var netAttsendpostconnectwifi = -1;
+var netAttsendpassword = -1;
+var netAttsendencryptedpassword = -1;
+var netAttsendtest = -1;
+var netAttsendsuccessconnectrequest = -1;
+var netAttsendnewipaddress = -1;
+var netAttsendversion = -1;
+var netAttsendnewsetupstate = -1;
+var netAttsendpostseteurekainfo = -1;
+var netAttsendnewname = -1;
+var netAttsendoptinstatustrue = -1;
+var netAttsendsuccesssetrequest = -1;
+var netAttsendpostsavewifi = -1;
+var netAttsendimmediatetrue = -1;
+var netAttsendsuccesssaverequest = -1;
+var netAttsendmdnsdiscoveryrequest = -1;
+var netAttsendmdnsdiscoveryresponse = -1;
+var netAttsendvalidscreenid = -1;
+var netAttsendgetmdxsessionstatus = -1;
+var netAttsendscreenid = -1;
+var netAttsendgetloungetoken = -1;
+var netAttsendexpiration = -1;
+var netAttsendscreenidassociation = -1;
+var netAttsendgetscreenavailability = -1;
+var netAttsendavailabilityresponse = -1;
+var netAttsendpostbindrequest = -1;
+var netAttsenddevice = -1;
+var netAttsendid = -1;
+var netAttsendcontrolpointname = -1;
+var netAttsendappname = -1;
+var netAttsendmethodsetplaylist = -1;
+var netAttsendvideoid = -1;
+var netAttsendcurrentvideoid = -1;
+var netAttsendsid = -1;
+var netAttsendgsessionid = -1;
+var netAttsendloungestatus = -1;
+var netAttsendplaylistmodified = -1;
+var netAttsendonautoplaymodechanged = -1;
+var netAttsendonplaylistmodechanged = -1;
+var netAttsendsignrparam = -1;
+var netAttsendversionrparam = -1;
+var netAttsendnamerparam = -1;
+var netAttsendsetupstaterparam = -1;
+var netAttsendethernetconnectedrparam = -1;
+var netAttsendipaddressrparam = -1;
+var netAttsendssdpudnrparam = -1;
+var netAttsendmodelnamerparam = -1;
+var netAttsenddevicecapabilitiesrparam = -1;
+var netAttsendssidsuffixrparam = -1;
+var netAttsendtosacceptedrparam = -1;
+var netAttsendpublickeyrparam = -1;
+var netAttsendbssidrparam = -1;
+var netAttsendaenc = -1;
+var netAttsendadec = -1;
+var netAttsendsdprivatekey = -1;
+MaliciousSD() = MaliciousSDBroadcastWiFiBeacon();
+MaliciousSDBroadcastWiFiBeacon()=wifi0!ChromecastWiFiBeacon.ChromecastSSID.ChromecastBSSID-> generatedStatUpdate0{attsdsendchromecastwifibeacon=ChromecastWiFiBeacon}-> generatedStatUpdate1{attsdsendchromecastssid=ChromecastSSID}-> generatedStatUpdate2{attsdsendchromecastbssid=ChromecastBSSID}->(MaliciousSDReceiveAuthRequest()[]MaliciousSDBroadcastWiFiBeacon());
+MaliciousSDReceiveAuthRequest()=wifi0?ChromecastSSID.OpenSystemAuthenticationRequest-> generatedStatUpdate0{attsdrecvchromecastssid=ChromecastSSID}-> generatedStatUpdate1{attsdrecvopensystemauthenticationrequest=OpenSystemAuthenticationRequest}->MaliciousSDSendAssociationResponse();
+MaliciousSDSendAssociationResponse()=wifi0!AssociationResponse-> generatedStatUpdate0{attsdsendassociationresponse=AssociationResponse}->MaliciousSDReceiveEurekaInfoRequest();
+MaliciousSDReceiveEurekaInfoRequest()=openwifi?GetEurekaInfo.SignRParam.VersionRParam.NameRParam.SetupStateRParam.EthernetConnectedRParam.IPaddressRParam.SsdpUdnRParam.ModelNameRParam.DeviceCapabilitiesRParam.SSIDSuffixRParam.TosAcceptedRParam.PublicKeyRParam.BSSIDRParam.newNonce-> generatedStatUpdate0{attsdrecvgeteurekainfo=GetEurekaInfo}-> generatedStatUpdate1{attsdrecvsignrparam=SignRParam}-> generatedStatUpdate2{attsdrecvversionrparam=VersionRParam}-> generatedStatUpdate3{attsdrecvnamerparam=NameRParam}-> generatedStatUpdate4{attsdrecvsetupstaterparam=SetupStateRParam}-> generatedStatUpdate5{attsdrecvethernetconnectedrparam=EthernetConnectedRParam}-> generatedStatUpdate6{attsdrecvipaddressrparam=IPaddressRParam}-> generatedStatUpdate7{attsdrecvssdpudnrparam=SsdpUdnRParam}-> generatedStatUpdate8{attsdrecvmodelnamerparam=ModelNameRParam}-> generatedStatUpdate9{attsdrecvdevicecapabilitiesrparam=DeviceCapabilitiesRParam}-> generatedStatUpdate10{attsdrecvssidsuffixrparam=SSIDSuffixRParam}-> generatedStatUpdate11{attsdrecvtosacceptedrparam=TosAcceptedRParam}-> generatedStatUpdate12{attsdrecvpublickeyrparam=PublicKeyRParam}-> generatedStatUpdate13{attsdrecvbssidrparam=BSSIDRParam}-> generatedStatUpdate14{attsdrecvnewnonce=newNonce}->saveNonce{sdReceivedNonce=newNonce}->MaliciousSDSendEurekaInfo();
+MaliciousSDSendEurekaInfo()=openwifi!EurekaInfo.Version.Name.SetupState.EthernetConnected.IPaddress.SsdpUdn.ModelName.DeviceCapabilities.SSIDSuffix.TosAccepted.BSSID.SDPublicKey.Certificate.IntermediateCerts.SignedData.sdReceivedNonce-> generatedStatUpdate0{attsdsendeurekainfo=EurekaInfo}-> generatedStatUpdate1{attsdsendversion=Version}-> generatedStatUpdate2{attsdsendname=Name}-> generatedStatUpdate3{attsdsendsetupstate=SetupState}-> generatedStatUpdate4{attsdsendethernetconnected=EthernetConnected}-> generatedStatUpdate5{attsdsendipaddress=IPaddress}-> generatedStatUpdate6{attsdsendssdpudn=SsdpUdn}-> generatedStatUpdate7{attsdsendmodelname=ModelName}-> generatedStatUpdate8{attsdsenddevicecapabilities=DeviceCapabilities}-> generatedStatUpdate9{attsdsendssidsuffix=SSIDSuffix}-> generatedStatUpdate10{attsdsendtosaccepted=TosAccepted}-> generatedStatUpdate11{attsdsendbssid=BSSID}-> generatedStatUpdate12{attsdsendsdpublickey=SDPublicKey}-> generatedStatUpdate13{attsdsendcertificate=Certificate}-> generatedStatUpdate14{attsdsendintermediatecerts=IntermediateCerts}-> generatedStatUpdate15{attsdsendsigneddata=SignedData}-> generatedStatUpdate16{attsdsendsdreceivednonce=sdReceivedNonce}->(MaliciousSDReceivePostScanWifi()[]MaliciousSDReceiveEurekaInfoRequest());
+MaliciousSDReceivePostScanWifi()=openwifi?PostScanWifi-> generatedStatUpdate0{attsdrecvpostscanwifi=PostScanWifi}->MaliciousSDSendSuccessScanResponse();
+MaliciousSDSendSuccessScanResponse()=openwifi!SuccessScanResponse-> generatedStatUpdate0{attsdsendsuccessscanresponse=SuccessScanResponse}->(MaliciousSDReceivePostScanWifi()[]MaliciousSDReceiveGetScanResults());
+MaliciousSDReceiveGetScanResults()=openwifi?GetScanResults-> generatedStatUpdate0{attsdrecvgetscanresults=GetScanResults}->MaliciousSDSendScanResults();
+MaliciousSDSendScanResults()=openwifi!HomeWifiSSID.HomeWifiBSSID.Frequency.SignalLevel.WPAAuth7.WPACipher4-> generatedStatUpdate0{attsdsendhomewifissid=HomeWifiSSID}-> generatedStatUpdate1{attsdsendhomewifibssid=HomeWifiBSSID}-> generatedStatUpdate2{attsdsendfrequency=Frequency}-> generatedStatUpdate3{attsdsendsignallevel=SignalLevel}-> generatedStatUpdate4{attsdsendwpaauth7=WPAAuth7}-> generatedStatUpdate5{attsdsendwpacipher4=WPACipher4}->(MaliciousSDReceiveGetScanResults()[]MaliciousSDReceivePostConnectWifi());
+MaliciousSDReceivePostConnectWifi()=openwifi?PostConnectWifi.HomeWifiSSID.Aenc.password.PublicKey.WPAAuth7.WPACipher4-> generatedStatUpdate0{attsdrecvpostconnectwifi=PostConnectWifi}-> generatedStatUpdate1{attsdrecvhomewifissid=HomeWifiSSID}-> generatedStatUpdate2{attsdrecvaenc=Aenc}-> generatedStatUpdate3{attsdrecvpassword=password}-> generatedStatUpdate4{attsdrecvpublickey=PublicKey}-> generatedStatUpdate5{attsdrecvwpaauth7=WPAAuth7}-> generatedStatUpdate6{attsdrecvwpacipher4=WPACipher4}->savePassword{sdReceivedPassword=password}->MaliciousSDSendSuccessConnectRequest();
+MaliciousSDSendSuccessConnectRequest()=adec.sdReceivedPassword.SDPublicKey.SDPrivateKey->openwifi!SuccessConnectRequest.Adec.sdReceivedPassword.SDPublicKey.SDPrivateKey-> generatedStatUpdate0{attsdsendsuccessconnectrequest=SuccessConnectRequest}-> generatedStatUpdate1{attsdsendadec=Adec}-> generatedStatUpdate2{attsdsendsdreceivedpassword=sdReceivedPassword}-> generatedStatUpdate3{attsdsendsdpublickey=SDPublicKey}-> generatedStatUpdate4{attsdsendsdprivatekey=SDPrivateKey}->MaliciousSDReceiveGetEurekaInfo2();
+MaliciousSDReceiveGetEurekaInfo2()=openwifi?GetEurekaInfo.IPaddressRParam.VersionRParam.SetupStateRParam-> generatedStatUpdate0{attsdrecvgeteurekainfo=GetEurekaInfo}-> generatedStatUpdate1{attsdrecvipaddressrparam=IPaddressRParam}-> generatedStatUpdate2{attsdrecvversionrparam=VersionRParam}-> generatedStatUpdate3{attsdrecvsetupstaterparam=SetupStateRParam}->MaliciousSDSendEurekaInfo2();
+MaliciousSDSendEurekaInfo2()=openwifi!NewIPAddress.Version.NewSetupState-> generatedStatUpdate0{attsdsendnewipaddress=NewIPAddress}-> generatedStatUpdate1{attsdsendversion=Version}-> generatedStatUpdate2{attsdsendnewsetupstate=NewSetupState}->MaliciousSDReceivePostSetEurekaInfo();
+MaliciousSDReceivePostSetEurekaInfo()=openwifi?PostSetEurekaInfo.NewName.OptInStatusTrue-> generatedStatUpdate0{attsdrecvpostseteurekainfo=PostSetEurekaInfo}-> generatedStatUpdate1{attsdrecvnewname=NewName}-> generatedStatUpdate2{attsdrecvoptinstatustrue=OptInStatusTrue}->MaliciousSDSendSuccessSetRequest();
+MaliciousSDSendSuccessSetRequest()=openwifi!SuccessSetRequest-> generatedStatUpdate0{attsdsendsuccesssetrequest=SuccessSetRequest}->(MaliciousSDReceivePostSetEurekaInfo()[]MaliciousSDReceivePostSaveWifi());
+MaliciousSDReceivePostSaveWifi()=openwifi?PostSaveWifi.ImmediateTrue-> generatedStatUpdate0{attsdrecvpostsavewifi=PostSaveWifi}-> generatedStatUpdate1{attsdrecvimmediatetrue=ImmediateTrue}->MaliciousSDSendSuccessSaveRequest();
+MaliciousSDSendSuccessSaveRequest()=openwifi!SuccessSaveRequest-> generatedStatUpdate0{attsdsendsuccesssaverequest=SuccessSaveRequest}->MaliciousSDReceiveMDNSDiscoveryRequest();
+MaliciousSDReceiveMDNSDiscoveryRequest()=wifi?MDNSDiscoveryRequest-> generatedStatUpdate0{attsdrecvmdnsdiscoveryrequest=MDNSDiscoveryRequest}->(MaliciousSDReceiveMDNSDiscoveryRequest()[]MaliciousSDSendMDNSDiscoveryResponse());
+MaliciousSDSendMDNSDiscoveryResponse()=wifi!MDNSDiscoveryResponse-> generatedStatUpdate0{attsdsendmdnsdiscoveryresponse=MDNSDiscoveryResponse}->MaliciousSDSendValidScreenID();
+MaliciousSDSendValidScreenID()=wifi!ValidScreenID-> generatedStatUpdate0{attsdsendvalidscreenid=ValidScreenID}->MaliciousSDReceiveGetMdxSessionStatus();
+MaliciousSDReceiveGetMdxSessionStatus()=wifi?GetMdxSessionStatus-> generatedStatUpdate0{attsdrecvgetmdxsessionstatus=GetMdxSessionStatus}->MaliciousSDSendScreenID();
+MaliciousSDSendScreenID()=wifi!ScreenID-> generatedStatUpdate0{attsdsendscreenid=ScreenID}->Skip();
+MaliciousCP() = MaliciousCPReceiveWiFiBeacon();
+MaliciousCPReceiveWiFiBeacon()=wifi0?ChromecastWiFiBeacon.ChromecastSSID.ChromecastBSSID-> generatedStatUpdate0{attcprecvchromecastwifibeacon=ChromecastWiFiBeacon}-> generatedStatUpdate1{attcprecvchromecastssid=ChromecastSSID}-> generatedStatUpdate2{attcprecvchromecastbssid=ChromecastBSSID}->MaliciousCPSendAuthRequest();
+MaliciousCPSendAuthRequest()=wifi0!ChromecastSSID.OpenSystemAuthenticationRequest-> generatedStatUpdate0{attcpsendchromecastssid=ChromecastSSID}-> generatedStatUpdate1{attcpsendopensystemauthenticationrequest=OpenSystemAuthenticationRequest}->MaliciousCPReceiveAssociationResponse();
+MaliciousCPReceiveAssociationResponse()=wifi0?assocResponse-> generatedStatUpdate0{attcprecvassocresponse=assocResponse}->CPSendGetEurekaInfo;
+MaliciousCPSendGetEurekaInfo()=generateNewCPNonce{cpNonce=(cpNonce+1)%(NONCE_UPPER_BOUND_INCLUSIVE+1)}->openwifi!GetEurekaInfo.SignRParam.VersionRParam.NameRParam.SetupStateRParam.EthernetConnectedRParam.IPaddressRParam.SsdpUdnRParam.ModelNameRParam.DeviceCapabilitiesRParam.SSIDSuffixRParam.TosAcceptedRParam.PublicKeyRParam.BSSIDRParam.cpNonce-> generatedStatUpdate0{attcpsendgeteurekainfo=GetEurekaInfo}-> generatedStatUpdate1{attcpsendsignrparam=SignRParam}-> generatedStatUpdate2{attcpsendversionrparam=VersionRParam}-> generatedStatUpdate3{attcpsendnamerparam=NameRParam}-> generatedStatUpdate4{attcpsendsetupstaterparam=SetupStateRParam}-> generatedStatUpdate5{attcpsendethernetconnectedrparam=EthernetConnectedRParam}-> generatedStatUpdate6{attcpsendipaddressrparam=IPaddressRParam}-> generatedStatUpdate7{attcpsendssdpudnrparam=SsdpUdnRParam}-> generatedStatUpdate8{attcpsendmodelnamerparam=ModelNameRParam}-> generatedStatUpdate9{attcpsenddevicecapabilitiesrparam=DeviceCapabilitiesRParam}-> generatedStatUpdate10{attcpsendssidsuffixrparam=SSIDSuffixRParam}-> generatedStatUpdate11{attcpsendtosacceptedrparam=TosAcceptedRParam}-> generatedStatUpdate12{attcpsendpublickeyrparam=PublicKeyRParam}-> generatedStatUpdate13{attcpsendbssidrparam=BSSIDRParam}-> generatedStatUpdate14{attcpsendcpnonce=cpNonce}->MaliciousCPReceiveCerts();
+MaliciousCPReceiveCerts()=openwifi?[nonce==cpNonce&&certificate==Certificate]EurekaInfo.Version.Name.SetupState.EthernetConnected.IPaddress.SsdpUdn.ModelName.DeviceCapabilities.SSIDSuffix.TosAccepted.BSSID.publicKey.certificate.IntermediateCerts.SignedData.nonce->verify{cpSavedSDPublicKey=publicKey}->(MaliciousCPSendGetEurekaInfo()[]MaliciousCPSendPostScanWifi());
+MaliciousCPSendPostScanWifi()=openwifi!PostScanWifi-> generatedStatUpdate0{attcpsendpostscanwifi=PostScanWifi}->MaliciousCPReceiveSuccessScanResponse();
+MaliciousCPReceiveSuccessScanResponse()=openwifi?SuccessScanResponse-> generatedStatUpdate0{attcprecvsuccessscanresponse=SuccessScanResponse}->(MaliciousCPSendGetScanResults()[]MaliciousCPSendPostScanWifi());
+MaliciousCPSendGetScanResults()=openwifi!GetScanResults-> generatedStatUpdate0{attcpsendgetscanresults=GetScanResults}->MaliciousCPReceiveScanResults();
+MaliciousCPReceiveScanResults()=openwifi?homeWifiSSID.homeWifiBSSID.frequency.signalLevel.wpaAuth7.wpaCipher4-> generatedStatUpdate0{attcprecvhomewifissid=homeWifiSSID}-> generatedStatUpdate1{attcprecvhomewifibssid=homeWifiBSSID}-> generatedStatUpdate2{attcprecvfrequency=frequency}-> generatedStatUpdate3{attcprecvsignallevel=signalLevel}-> generatedStatUpdate4{attcprecvwpaauth7=wpaAuth7}-> generatedStatUpdate5{attcprecvwpacipher4=wpaCipher4}->(MaliciousCPSendGetScanResults()[]MaliciousCPSendPostConnectWifi(homeWifiSSID,wpaAuth7,wpaCipher4));
+MaliciousCPSendPostConnectWifi(homeWifiSSID,wpaAuth7,wpaCipher4)=aenc.Password.cpSavedSDPublicKey->openwifi!PostConnectWifi.homeWifiSSID.Aenc.Password.cpSavedSDPublicKey.wpaAuth7.wpaCipher4-> generatedStatUpdate0{attcpsendpostconnectwifi=PostConnectWifi}-> generatedStatUpdate1{attcpsendhomewifissid=homeWifiSSID}-> generatedStatUpdate2{attcpsendaenc=Aenc}-> generatedStatUpdate3{attcpsendpassword=Password}-> generatedStatUpdate4{attcpsendcpsavedsdpublickey=cpSavedSDPublicKey}-> generatedStatUpdate5{attcpsendwpaauth7=wpaAuth7}-> generatedStatUpdate6{attcpsendwpacipher4=wpaCipher4}->MaliciousCPReceiveSuccessConnectRequest();
+MaliciousCPReceiveSuccessConnectRequest()=successConn->openwifi?SuccessConnectRequest.Adec.Password.SDPublicKey.SDPrivateKey-> generatedStatUpdate0{attcprecvsuccessconnectrequest=SuccessConnectRequest}-> generatedStatUpdate1{attcprecvadec=Adec}-> generatedStatUpdate2{attcprecvpassword=Password}-> generatedStatUpdate3{attcprecvsdpublickey=SDPublicKey}-> generatedStatUpdate4{attcprecvsdprivatekey=SDPrivateKey}->MaliciousCPSendGetEurekaInfo2();
+MaliciousCPSendGetEurekaInfo2()=openwifi!GetEurekaInfo.IPaddressRParam.VersionRParam.SetupStateRParam-> generatedStatUpdate0{attcpsendgeteurekainfo=GetEurekaInfo}-> generatedStatUpdate1{attcpsendipaddressrparam=IPaddressRParam}-> generatedStatUpdate2{attcpsendversionrparam=VersionRParam}-> generatedStatUpdate3{attcpsendsetupstaterparam=SetupStateRParam}->MaliciousCPReceiveEurekaInfo2();
+MaliciousCPReceiveEurekaInfo2()=openwifi?NewIPAddress.Version.NewSetupState-> generatedStatUpdate0{attcprecvnewipaddress=NewIPAddress}-> generatedStatUpdate1{attcprecvversion=Version}-> generatedStatUpdate2{attcprecvnewsetupstate=NewSetupState}->MaliciousCPSendPostSetEurekaInfo();
+MaliciousCPSendPostSetEurekaInfo()=openwifi!PostSetEurekaInfo.NewName.OptInStatusTrue-> generatedStatUpdate0{attcpsendpostseteurekainfo=PostSetEurekaInfo}-> generatedStatUpdate1{attcpsendnewname=NewName}-> generatedStatUpdate2{attcpsendoptinstatustrue=OptInStatusTrue}->MaliciousCPReceiveSuccessSetRequest();
+MaliciousCPReceiveSuccessSetRequest()=openwifi?SuccessSetRequest-> generatedStatUpdate0{attcprecvsuccesssetrequest=SuccessSetRequest}->(MaliciousCPSendPostSetEurekaInfo()[]MaliciousCPSendPostSaveWifi());
+MaliciousCPSendPostSaveWifi()=openwifi!PostSaveWifi.ImmediateTrue-> generatedStatUpdate0{attcpsendpostsavewifi=PostSaveWifi}-> generatedStatUpdate1{attcpsendimmediatetrue=ImmediateTrue}->MaliciousCPReceiveSuccessSaveRequest();
+MaliciousCPReceiveSuccessSaveRequest()=openwifi?SuccessSaveRequest-> generatedStatUpdate0{attcprecvsuccesssaverequest=SuccessSaveRequest}->MaliciousCPSendMDNSDiscoveryRequest();
+MaliciousCPSendMDNSDiscoveryRequest()=wifi!MDNSDiscoveryRequest-> generatedStatUpdate0{attcpsendmdnsdiscoveryrequest=MDNSDiscoveryRequest}->(MaliciousCPSendMDNSDiscoveryRequest()[]MaliciousCPReceiveMDNSDiscoveryResponse());
+MaliciousCPReceiveMDNSDiscoveryResponse()=wifi?MDNSDiscoveryResponse-> generatedStatUpdate0{attcprecvmdnsdiscoveryresponse=MDNSDiscoveryResponse}->MaliciousCPSendGetMdxSessionStatus();
+MaliciousCPSendGetMdxSessionStatus()=wifi!GetMdxSessionStatus-> generatedStatUpdate0{attcpsendgetmdxsessionstatus=GetMdxSessionStatus}->MaliciousCPReceiveScreenID();
+MaliciousCPReceiveScreenID()=wifi?ScreenID-> generatedStatUpdate0{attcprecvscreenid=ScreenID}->MaliciousCPSendGetLoungeToken();
+MaliciousCPSendGetLoungeToken()=wifi!GetLoungeToken.ScreenID-> generatedStatUpdate0{attcpsendgetloungetoken=GetLoungeToken}-> generatedStatUpdate1{attcpsendscreenid=ScreenID}->MaliciousCPReceiveAssociation();
+MaliciousCPReceiveAssociation()=wifi?ScreenIDAssociation.Expiration.ScreenID-> generatedStatUpdate0{attcprecvscreenidassociation=ScreenIDAssociation}-> generatedStatUpdate1{attcprecvexpiration=Expiration}-> generatedStatUpdate2{attcprecvscreenid=ScreenID}->(MaliciousCPSendGetScreenAvailability()[]MaliciousCPSendPostBindRequest());
+MaliciousCPSendGetScreenAvailability()=wifi!GetScreenAvailability.ScreenIDAssociation-> generatedStatUpdate0{attcpsendgetscreenavailability=GetScreenAvailability}-> generatedStatUpdate1{attcpsendscreenidassociation=ScreenIDAssociation}->MaliciousCPReceiveAvailabilityResponse();
+MaliciousCPReceiveAvailabilityResponse()=wifi?AvailabilityResponse.ScreenIDAssociation-> generatedStatUpdate0{attcprecvavailabilityresponse=AvailabilityResponse}-> generatedStatUpdate1{attcprecvscreenidassociation=ScreenIDAssociation}->(MaliciousCPSendGetScreenAvailability()[]MaliciousCPSendPostBindRequest());
+MaliciousCPSendPostBindRequest()=wifi!PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList.VideoID-> generatedStatUpdate0{attcpsendpostbindrequest=PostBindRequest}-> generatedStatUpdate1{attcpsendscreenidassociation=ScreenIDAssociation}-> generatedStatUpdate2{attcpsenddevice=Device}-> generatedStatUpdate3{attcpsendid=ID}-> generatedStatUpdate4{attcpsendcontrolpointname=ControlPointName}-> generatedStatUpdate5{attcpsendappname=AppName}-> generatedStatUpdate6{attcpsendmethodsetplaylist=MethodSetPlayList}-> generatedStatUpdate7{attcpsendvideoid=VideoID}->MaliciousCPReceiveCurrentVideoID();
+MaliciousCPReceiveCurrentVideoID()=wifi?CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged-> generatedStatUpdate0{attcprecvcurrentvideoid=CurrentVideoID}-> generatedStatUpdate1{attcprecvsid=SID}-> generatedStatUpdate2{attcprecvgsessionid=GsessionID}-> generatedStatUpdate3{attcprecvloungestatus=LoungeStatus}-> generatedStatUpdate4{attcprecvplaylistmodified=PlaylistModified}-> generatedStatUpdate5{attcprecvonautoplaymodechanged=OnAutoplayModeChanged}-> generatedStatUpdate6{attcprecvonplaylistmodechanged=OnPlaylistModeChanged}->(MaliciousCPSendPostBindRequest()[]MaliciousCPSendPostBindRequestWithoutVideoID());
+MaliciousCPSendPostBindRequestWithoutVideoID()=wifi!PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList-> generatedStatUpdate0{attcpsendpostbindrequest=PostBindRequest}-> generatedStatUpdate1{attcpsendscreenidassociation=ScreenIDAssociation}-> generatedStatUpdate2{attcpsenddevice=Device}-> generatedStatUpdate3{attcpsendid=ID}-> generatedStatUpdate4{attcpsendcontrolpointname=ControlPointName}-> generatedStatUpdate5{attcpsendappname=AppName}-> generatedStatUpdate6{attcpsendmethodsetplaylist=MethodSetPlayList}->MaliciousCPReceiveCurrentVideoIDWithoutStreaming();
+MaliciousCPReceiveCurrentVideoIDWithoutStreaming()=wifi?CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged-> generatedStatUpdate0{attcprecvcurrentvideoid=CurrentVideoID}-> generatedStatUpdate1{attcprecvsid=SID}-> generatedStatUpdate2{attcprecvgsessionid=GsessionID}-> generatedStatUpdate3{attcprecvloungestatus=LoungeStatus}-> generatedStatUpdate4{attcprecvplaylistmodified=PlaylistModified}-> generatedStatUpdate5{attcprecvonautoplaymodechanged=OnAutoplayModeChanged}-> generatedStatUpdate6{attcprecvonplaylistmodechanged=OnPlaylistModeChanged}->(MaliciousCPSendPostBindRequestWithoutVideoID()[]Skip());
+MaliciousGS() = MaliciousGSReceiveValidScreenID();
+MaliciousGSReceiveValidScreenID()=wifi?ValidScreenID-> generatedStatUpdate0{attgsrecvvalidscreenid=ValidScreenID}->MaliciousGSReceiveGetLoungeToken();
+MaliciousGSReceiveGetLoungeToken()=wifi?GetLoungeToken.screenID-> generatedStatUpdate0{attgsrecvgetloungetoken=GetLoungeToken}-> generatedStatUpdate1{attgsrecvscreenid=screenID}->MaliciousGSSendAssociation();
+MaliciousGSSendAssociation()=wifi!ScreenIDAssociation.Expiration.ScreenID-> generatedStatUpdate0{attgssendscreenidassociation=ScreenIDAssociation}-> generatedStatUpdate1{attgssendexpiration=Expiration}-> generatedStatUpdate2{attgssendscreenid=ScreenID}->saveMapScreenIDAndAssociation->(MaliciousGSReceiveGetScreenAvailability()[]MaliciousGSReceivePostBindRequest());
+MaliciousGSReceiveGetScreenAvailability()=wifi?GetScreenAvailability.ScreenIDAssociation-> generatedStatUpdate0{attgsrecvgetscreenavailability=GetScreenAvailability}-> generatedStatUpdate1{attgsrecvscreenidassociation=ScreenIDAssociation}->verifyAssociation1->MaliciousGSSendAvailabilityResponse();
+MaliciousGSSendAvailabilityResponse()=wifi!AvailabilityResponse.ScreenIDAssociation-> generatedStatUpdate0{attgssendavailabilityresponse=AvailabilityResponse}-> generatedStatUpdate1{attgssendscreenidassociation=ScreenIDAssociation}->(MaliciousGSReceiveGetScreenAvailability()[]MaliciousGSReceivePostBindRequest());
+MaliciousGSReceivePostBindRequest()=wifi?PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList.VideoID-> generatedStatUpdate0{attgsrecvpostbindrequest=PostBindRequest}-> generatedStatUpdate1{attgsrecvscreenidassociation=ScreenIDAssociation}-> generatedStatUpdate2{attgsrecvdevice=Device}-> generatedStatUpdate3{attgsrecvid=ID}-> generatedStatUpdate4{attgsrecvcontrolpointname=ControlPointName}-> generatedStatUpdate5{attgsrecvappname=AppName}-> generatedStatUpdate6{attgsrecvmethodsetplaylist=MethodSetPlayList}-> generatedStatUpdate7{attgsrecvvideoid=VideoID}->verifyAssociation2->MaliciousGSSendCurrentVideoID();
+MaliciousGSSendCurrentVideoID()=gsStreamVideo->wifi!CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged-> generatedStatUpdate0{attgssendcurrentvideoid=CurrentVideoID}-> generatedStatUpdate1{attgssendsid=SID}-> generatedStatUpdate2{attgssendgsessionid=GsessionID}-> generatedStatUpdate3{attgssendloungestatus=LoungeStatus}-> generatedStatUpdate4{attgssendplaylistmodified=PlaylistModified}-> generatedStatUpdate5{attgssendonautoplaymodechanged=OnAutoplayModeChanged}-> generatedStatUpdate6{attgssendonplaylistmodechanged=OnPlaylistModeChanged}->(MaliciousGSReceivePostBindRequest()[]MaliciousGSReceivePostBindRequestWithoutVideoID());
+MaliciousGSReceivePostBindRequestWithoutVideoID()=wifi?PostBindRequest.ScreenIDAssociation.Device.ID.ControlPointName.AppName.MethodSetPlayList-> generatedStatUpdate0{attgsrecvpostbindrequest=PostBindRequest}-> generatedStatUpdate1{attgsrecvscreenidassociation=ScreenIDAssociation}-> generatedStatUpdate2{attgsrecvdevice=Device}-> generatedStatUpdate3{attgsrecvid=ID}-> generatedStatUpdate4{attgsrecvcontrolpointname=ControlPointName}-> generatedStatUpdate5{attgsrecvappname=AppName}-> generatedStatUpdate6{attgsrecvmethodsetplaylist=MethodSetPlayList}->verifyAssociation->MaliciousGSSendCurrentVideoIDWithoutStreaming();
+MaliciousGSSendCurrentVideoIDWithoutStreaming()=wifi!CurrentVideoID.SID.GsessionID.LoungeStatus.PlaylistModified.OnAutoplayModeChanged.OnPlaylistModeChanged-> generatedStatUpdate0{attgssendcurrentvideoid=CurrentVideoID}-> generatedStatUpdate1{attgssendsid=SID}-> generatedStatUpdate2{attgssendgsessionid=GsessionID}-> generatedStatUpdate3{attgssendloungestatus=LoungeStatus}-> generatedStatUpdate4{attgssendplaylistmodified=PlaylistModified}-> generatedStatUpdate5{attgssendonautoplaymodechanged=OnAutoplayModeChanged}-> generatedStatUpdate6{attgssendonplaylistmodechanged=OnPlaylistModeChanged}->(MaliciousGSReceivePostBindRequestWithoutVideoID()[]Skip());
+MaliciousSystem =AutoGeneratedNetworkAttacker() ||| MaliciousCP() ||| MaliciousSD() ||| MaliciousGS();// 
+MaliciousCPSystem=MaliciousCP()|||SD()|||GS();
+MaliciousSDSystem=CP()|||MaliciousSD()|||GS();
+MaliciousGSSystem=CP()|||SD()|||MaliciousGS();
+#define sdsentChromecastWiFiBeacon attsdsendchromecastwifibeacon> -1;
+#define sdsentChromecastSSID attsdsendchromecastssid> -1;
+#define sdsentChromecastBSSID attsdsendchromecastbssid> -1;
+#define sdreceivedChromecastSSID attsdrecvchromecastssid> -1;
+#define sdreceivedOpenSystemAuthenticationRequest attsdrecvopensystemauthenticationrequest> -1;
+#define sdsentAssociationResponse attsdsendassociationresponse> -1;
+#define sdreceivedGetEurekaInfo attsdrecvgeteurekainfo> -1;
+#define sdreceivedSignRParam attsdrecvsignrparam> -1;
+#define sdreceivedVersionRParam attsdrecvversionrparam> -1;
+#define sdreceivedNameRParam attsdrecvnamerparam> -1;
+#define sdreceivedSetupStateRParam attsdrecvsetupstaterparam> -1;
+#define sdreceivedEthernetConnectedRParam attsdrecvethernetconnectedrparam> -1;
+#define sdreceivedIPaddressRParam attsdrecvipaddressrparam> -1;
+#define sdreceivedSsdpUdnRParam attsdrecvssdpudnrparam> -1;
+#define sdreceivedModelNameRParam attsdrecvmodelnamerparam> -1;
+#define sdreceivedDeviceCapabilitiesRParam attsdrecvdevicecapabilitiesrparam> -1;
+#define sdreceivedSSIDSuffixRParam attsdrecvssidsuffixrparam> -1;
+#define sdreceivedTosAcceptedRParam attsdrecvtosacceptedrparam> -1;
+#define sdreceivedPublicKeyRParam attsdrecvpublickeyrparam> -1;
+#define sdreceivedBSSIDRParam attsdrecvbssidrparam> -1;
+#define sdreceivednewNonce attsdrecvnewnonce> -1;
+#define sdsentEurekaInfo attsdsendeurekainfo> -1;
+#define sdsentVersion attsdsendversion> -1;
+#define sdsentName attsdsendname> -1;
+#define sdsentSetupState attsdsendsetupstate> -1;
+#define sdsentEthernetConnected attsdsendethernetconnected> -1;
+#define sdsentIPaddress attsdsendipaddress> -1;
+#define sdsentSsdpUdn attsdsendssdpudn> -1;
+#define sdsentModelName attsdsendmodelname> -1;
+#define sdsentDeviceCapabilities attsdsenddevicecapabilities> -1;
+#define sdsentSSIDSuffix attsdsendssidsuffix> -1;
+#define sdsentTosAccepted attsdsendtosaccepted> -1;
+#define sdsentBSSID attsdsendbssid> -1;
+#define sdsentSDPublicKey attsdsendsdpublickey> -1;
+#define sdsentCertificate attsdsendcertificate> -1;
+#define sdsentIntermediateCerts attsdsendintermediatecerts> -1;
+#define sdsentSignedData attsdsendsigneddata> -1;
+#define sdsentsdReceivedNonce attsdsendsdreceivednonce> -1;
+#define sdreceivedPostScanWifi attsdrecvpostscanwifi> -1;
+#define sdsentSuccessScanResponse attsdsendsuccessscanresponse> -1;
+#define sdreceivedGetScanResults attsdrecvgetscanresults> -1;
+#define sdsentHomeWifiSSID attsdsendhomewifissid> -1;
+#define sdsentHomeWifiBSSID attsdsendhomewifibssid> -1;
+#define sdsentFrequency attsdsendfrequency> -1;
+#define sdsentSignalLevel attsdsendsignallevel> -1;
+#define sdsentWPAAuth7 attsdsendwpaauth7> -1;
+#define sdsentWPACipher4 attsdsendwpacipher4> -1;
+#define sdreceivedPostConnectWifi attsdrecvpostconnectwifi> -1;
+#define sdreceivedHomeWifiSSID attsdrecvhomewifissid> -1;
+#define sdreceivedAenc attsdrecvaenc> -1;
+#define sdreceivedpassword attsdrecvpassword> -1;
+#define sdreceivedPublicKey attsdrecvpublickey> -1;
+#define sdreceivedWPAAuth7 attsdrecvwpaauth7> -1;
+#define sdreceivedWPACipher4 attsdrecvwpacipher4> -1;
+#define sdsentSuccessConnectRequest attsdsendsuccessconnectrequest> -1;
+#define sdsentAdec attsdsendadec> -1;
+#define sdsentsdReceivedPassword attsdsendsdreceivedpassword> -1;
+#define sdsentSDPrivateKey attsdsendsdprivatekey> -1;
+#define sdsentNewIPAddress attsdsendnewipaddress> -1;
+#define sdsentNewSetupState attsdsendnewsetupstate> -1;
+#define sdreceivedPostSetEurekaInfo attsdrecvpostseteurekainfo> -1;
+#define sdreceivedNewName attsdrecvnewname> -1;
+#define sdreceivedOptInStatusTrue attsdrecvoptinstatustrue> -1;
+#define sdsentSuccessSetRequest attsdsendsuccesssetrequest> -1;
+#define sdreceivedPostSaveWifi attsdrecvpostsavewifi> -1;
+#define sdreceivedImmediateTrue attsdrecvimmediatetrue> -1;
+#define sdsentSuccessSaveRequest attsdsendsuccesssaverequest> -1;
+#define sdreceivedMDNSDiscoveryRequest attsdrecvmdnsdiscoveryrequest> -1;
+#define sdsentMDNSDiscoveryResponse attsdsendmdnsdiscoveryresponse> -1;
+#define sdsentValidScreenID attsdsendvalidscreenid> -1;
+#define sdreceivedGetMdxSessionStatus attsdrecvgetmdxsessionstatus> -1;
+#define sdsentScreenID attsdsendscreenid> -1;
+#define cpreceivedChromecastWiFiBeacon attcprecvchromecastwifibeacon> -1;
+#define cpreceivedChromecastSSID attcprecvchromecastssid> -1;
+#define cpreceivedChromecastBSSID attcprecvchromecastbssid> -1;
+#define cpsentChromecastSSID attcpsendchromecastssid> -1;
+#define cpsentOpenSystemAuthenticationRequest attcpsendopensystemauthenticationrequest> -1;
+#define cpreceivedassocResponse attcprecvassocresponse> -1;
+#define cpsentGetEurekaInfo attcpsendgeteurekainfo> -1;
+#define cpsentSignRParam attcpsendsignrparam> -1;
+#define cpsentVersionRParam attcpsendversionrparam> -1;
+#define cpsentNameRParam attcpsendnamerparam> -1;
+#define cpsentSetupStateRParam attcpsendsetupstaterparam> -1;
+#define cpsentEthernetConnectedRParam attcpsendethernetconnectedrparam> -1;
+#define cpsentIPaddressRParam attcpsendipaddressrparam> -1;
+#define cpsentSsdpUdnRParam attcpsendssdpudnrparam> -1;
+#define cpsentModelNameRParam attcpsendmodelnamerparam> -1;
+#define cpsentDeviceCapabilitiesRParam attcpsenddevicecapabilitiesrparam> -1;
+#define cpsentSSIDSuffixRParam attcpsendssidsuffixrparam> -1;
+#define cpsentTosAcceptedRParam attcpsendtosacceptedrparam> -1;
+#define cpsentPublicKeyRParam attcpsendpublickeyrparam> -1;
+#define cpsentBSSIDRParam attcpsendbssidrparam> -1;
+#define cpsentcpNonce attcpsendcpnonce> -1;
+#define cpsentPostScanWifi attcpsendpostscanwifi> -1;
+#define cpreceivedSuccessScanResponse attcprecvsuccessscanresponse> -1;
+#define cpsentGetScanResults attcpsendgetscanresults> -1;
+#define cpreceivedhomeWifiSSID attcprecvhomewifissid> -1;
+#define cpreceivedhomeWifiBSSID attcprecvhomewifibssid> -1;
+#define cpreceivedfrequency attcprecvfrequency> -1;
+#define cpreceivedsignalLevel attcprecvsignallevel> -1;
+#define cpreceivedwpaAuth7 attcprecvwpaauth7> -1;
+#define cpreceivedwpaCipher4 attcprecvwpacipher4> -1;
+#define cpsentPostConnectWifi attcpsendpostconnectwifi> -1;
+#define cpsenthomeWifiSSID attcpsendhomewifissid> -1;
+#define cpsentAenc attcpsendaenc> -1;
+#define cpsentPassword attcpsendpassword> -1;
+#define cpsentcpSavedSDPublicKey attcpsendcpsavedsdpublickey> -1;
+#define cpsentwpaAuth7 attcpsendwpaauth7> -1;
+#define cpsentwpaCipher4 attcpsendwpacipher4> -1;
+#define cpreceivedSuccessConnectRequest attcprecvsuccessconnectrequest> -1;
+#define cpreceivedAdec attcprecvadec> -1;
+#define cpreceivedPassword attcprecvpassword> -1;
+#define cpreceivedSDPublicKey attcprecvsdpublickey> -1;
+#define cpreceivedSDPrivateKey attcprecvsdprivatekey> -1;
+#define cpreceivedNewIPAddress attcprecvnewipaddress> -1;
+#define cpreceivedVersion attcprecvversion> -1;
+#define cpreceivedNewSetupState attcprecvnewsetupstate> -1;
+#define cpsentPostSetEurekaInfo attcpsendpostseteurekainfo> -1;
+#define cpsentNewName attcpsendnewname> -1;
+#define cpsentOptInStatusTrue attcpsendoptinstatustrue> -1;
+#define cpreceivedSuccessSetRequest attcprecvsuccesssetrequest> -1;
+#define cpsentPostSaveWifi attcpsendpostsavewifi> -1;
+#define cpsentImmediateTrue attcpsendimmediatetrue> -1;
+#define cpreceivedSuccessSaveRequest attcprecvsuccesssaverequest> -1;
+#define cpsentMDNSDiscoveryRequest attcpsendmdnsdiscoveryrequest> -1;
+#define cpreceivedMDNSDiscoveryResponse attcprecvmdnsdiscoveryresponse> -1;
+#define cpsentGetMdxSessionStatus attcpsendgetmdxsessionstatus> -1;
+#define cpreceivedScreenID attcprecvscreenid> -1;
+#define cpsentGetLoungeToken attcpsendgetloungetoken> -1;
+#define cpsentScreenID attcpsendscreenid> -1;
+#define cpreceivedScreenIDAssociation attcprecvscreenidassociation> -1;
+#define cpreceivedExpiration attcprecvexpiration> -1;
+#define cpsentGetScreenAvailability attcpsendgetscreenavailability> -1;
+#define cpsentScreenIDAssociation attcpsendscreenidassociation> -1;
+#define cpreceivedAvailabilityResponse attcprecvavailabilityresponse> -1;
+#define cpsentPostBindRequest attcpsendpostbindrequest> -1;
+#define cpsentDevice attcpsenddevice> -1;
+#define cpsentID attcpsendid> -1;
+#define cpsentControlPointName attcpsendcontrolpointname> -1;
+#define cpsentAppName attcpsendappname> -1;
+#define cpsentMethodSetPlayList attcpsendmethodsetplaylist> -1;
+#define cpsentVideoID attcpsendvideoid> -1;
+#define cpreceivedCurrentVideoID attcprecvcurrentvideoid> -1;
+#define cpreceivedSID attcprecvsid> -1;
+#define cpreceivedGsessionID attcprecvgsessionid> -1;
+#define cpreceivedLoungeStatus attcprecvloungestatus> -1;
+#define cpreceivedPlaylistModified attcprecvplaylistmodified> -1;
+#define cpreceivedOnAutoplayModeChanged attcprecvonautoplaymodechanged> -1;
+#define cpreceivedOnPlaylistModeChanged attcprecvonplaylistmodechanged> -1;
+#define gsreceivedValidScreenID attgsrecvvalidscreenid> -1;
+#define gsreceivedGetLoungeToken attgsrecvgetloungetoken> -1;
+#define gsreceivedscreenID attgsrecvscreenid> -1;
+#define gssentScreenIDAssociation attgssendscreenidassociation> -1;
+#define gssentExpiration attgssendexpiration> -1;
+#define gssentScreenID attgssendscreenid> -1;
+#define gsreceivedGetScreenAvailability attgsrecvgetscreenavailability> -1;
+#define gsreceivedScreenIDAssociation attgsrecvscreenidassociation> -1;
+#define gssentAvailabilityResponse attgssendavailabilityresponse> -1;
+#define gsreceivedPostBindRequest attgsrecvpostbindrequest> -1;
+#define gsreceivedDevice attgsrecvdevice> -1;
+#define gsreceivedID attgsrecvid> -1;
+#define gsreceivedControlPointName attgsrecvcontrolpointname> -1;
+#define gsreceivedAppName attgsrecvappname> -1;
+#define gsreceivedMethodSetPlayList attgsrecvmethodsetplaylist> -1;
+#define gsreceivedVideoID attgsrecvvideoid> -1;
+#define gssentCurrentVideoID attgssendcurrentvideoid> -1;
+#define gssentSID attgssendsid> -1;
+#define gssentGsessionID attgssendgsessionid> -1;
+#define gssentLoungeStatus attgssendloungestatus> -1;
+#define gssentPlaylistModified attgssendplaylistmodified> -1;
+#define gssentOnAutoplayModeChanged attgssendonautoplaymodechanged> -1;
+#define gssentOnPlaylistModeChanged attgssendonplaylistmodechanged> -1;
+#define netAttsentChromecastWiFiBeacon netAttsendchromecastwifibeacon> -1;
+#define netAttsentChromecastSSID netAttsendchromecastssid> -1;
+#define netAttsentChromecastBSSID netAttsendchromecastbssid> -1;
+#define netAttsentOpenSystemAuthenticationRequest netAttsendopensystemauthenticationrequest> -1;
+#define netAttsentAssociationResponse netAttsendassociationresponse> -1;
+#define netAttsentGetEurekaInfo netAttsendgeteurekainfo> -1;
+#define netAttsentEurekaInfo netAttsendeurekainfo> -1;
+#define netAttsentNewNonce netAttsendnewnonce> -1;
+#define netAttsentName netAttsendname> -1;
+#define netAttsentSetupState netAttsendsetupstate> -1;
+#define netAttsentEthernetConnected netAttsendethernetconnected> -1;
+#define netAttsentIPaddress netAttsendipaddress> -1;
+#define netAttsentSsdpUdn netAttsendssdpudn> -1;
+#define netAttsentModelName netAttsendmodelname> -1;
+#define netAttsentDeviceCapabilities netAttsenddevicecapabilities> -1;
+#define netAttsentSSIDSuffix netAttsendssidsuffix> -1;
+#define netAttsentTosAccepted netAttsendtosaccepted> -1;
+#define netAttsentBSSID netAttsendbssid> -1;
+#define netAttsentSDPublicKey netAttsendsdpublickey> -1;
+#define netAttsentCertificate netAttsendcertificate> -1;
+#define netAttsentIntermediateCerts netAttsendintermediatecerts> -1;
+#define netAttsentSignedData netAttsendsigneddata> -1;
+#define netAttsentPostScanWifi netAttsendpostscanwifi> -1;
+#define netAttsentSuccessScanResponse netAttsendsuccessscanresponse> -1;
+#define netAttsentGetScanResults netAttsendgetscanresults> -1;
+#define netAttsentHomeWifiSSID netAttsendhomewifissid> -1;
+#define netAttsentHomeWifiBSSID netAttsendhomewifibssid> -1;
+#define netAttsentFrequency netAttsendfrequency> -1;
+#define netAttsentSignalLevel netAttsendsignallevel> -1;
+#define netAttsentWPAAuth7 netAttsendwpaauth7> -1;
+#define netAttsentWPACipher4 netAttsendwpacipher4> -1;
+#define netAttsentPostConnectWifi netAttsendpostconnectwifi> -1;
+#define netAttsentPassword netAttsendpassword> -1;
+#define netAttsentEncryptedPassword netAttsendencryptedpassword> -1;
+#define netAttsentTest netAttsendtest> -1;
+#define netAttsentSuccessConnectRequest netAttsendsuccessconnectrequest> -1;
+#define netAttsentNewIPAddress netAttsendnewipaddress> -1;
+#define netAttsentVersion netAttsendversion> -1;
+#define netAttsentNewSetupState netAttsendnewsetupstate> -1;
+#define netAttsentPostSetEurekaInfo netAttsendpostseteurekainfo> -1;
+#define netAttsentNewName netAttsendnewname> -1;
+#define netAttsentOptInStatusTrue netAttsendoptinstatustrue> -1;
+#define netAttsentSuccessSetRequest netAttsendsuccesssetrequest> -1;
+#define netAttsentPostSaveWifi netAttsendpostsavewifi> -1;
+#define netAttsentImmediateTrue netAttsendimmediatetrue> -1;
+#define netAttsentSuccessSaveRequest netAttsendsuccesssaverequest> -1;
+#define netAttsentMDNSDiscoveryRequest netAttsendmdnsdiscoveryrequest> -1;
+#define netAttsentMDNSDiscoveryResponse netAttsendmdnsdiscoveryresponse> -1;
+#define netAttsentValidScreenID netAttsendvalidscreenid> -1;
+#define netAttsentGetMdxSessionStatus netAttsendgetmdxsessionstatus> -1;
+#define netAttsentScreenID netAttsendscreenid> -1;
+#define netAttsentGetLoungeToken netAttsendgetloungetoken> -1;
+#define netAttsentExpiration netAttsendexpiration> -1;
+#define netAttsentScreenIDAssociation netAttsendscreenidassociation> -1;
+#define netAttsentGetScreenAvailability netAttsendgetscreenavailability> -1;
+#define netAttsentAvailabilityResponse netAttsendavailabilityresponse> -1;
+#define netAttsentPostBindRequest netAttsendpostbindrequest> -1;
+#define netAttsentDevice netAttsenddevice> -1;
+#define netAttsentID netAttsendid> -1;
+#define netAttsentControlPointName netAttsendcontrolpointname> -1;
+#define netAttsentAppName netAttsendappname> -1;
+#define netAttsentMethodSetPlayList netAttsendmethodsetplaylist> -1;
+#define netAttsentVideoID netAttsendvideoid> -1;
+#define netAttsentCurrentVideoID netAttsendcurrentvideoid> -1;
+#define netAttsentSID netAttsendsid> -1;
+#define netAttsentGsessionID netAttsendgsessionid> -1;
+#define netAttsentLoungeStatus netAttsendloungestatus> -1;
+#define netAttsentPlaylistModified netAttsendplaylistmodified> -1;
+#define netAttsentOnAutoplayModeChanged netAttsendonautoplaymodechanged> -1;
+#define netAttsentOnPlaylistModeChanged netAttsendonplaylistmodechanged> -1;
+#define netAttsentSignRParam netAttsendsignrparam> -1;
+#define netAttsentVersionRParam netAttsendversionrparam> -1;
+#define netAttsentNameRParam netAttsendnamerparam> -1;
+#define netAttsentSetupStateRParam netAttsendsetupstaterparam> -1;
+#define netAttsentEthernetConnectedRParam netAttsendethernetconnectedrparam> -1;
+#define netAttsentIPaddressRParam netAttsendipaddressrparam> -1;
+#define netAttsentSsdpUdnRParam netAttsendssdpudnrparam> -1;
+#define netAttsentModelNameRParam netAttsendmodelnamerparam> -1;
+#define netAttsentDeviceCapabilitiesRParam netAttsenddevicecapabilitiesrparam> -1;
+#define netAttsentSSIDSuffixRParam netAttsendssidsuffixrparam> -1;
+#define netAttsentTosAcceptedRParam netAttsendtosacceptedrparam> -1;
+#define netAttsentPublicKeyRParam netAttsendpublickeyrparam> -1;
+#define netAttsentBSSIDRParam netAttsendbssidrparam> -1;
+#define netAttsentAenc netAttsendaenc> -1;
+#define netAttsentAdec netAttsendadec> -1;
+#define netAttsentSDPrivateKey netAttsendsdprivatekey> -1;
+#assert MaliciousSDSystem reaches sdsentChromecastWiFiBeacon;
+#assert MaliciousSDSystem reaches sdsentChromecastSSID;
+#assert MaliciousSDSystem reaches sdsentChromecastBSSID;
+#assert MaliciousSDSystem reaches sdreceivedChromecastSSID;
+#assert MaliciousSDSystem reaches sdreceivedOpenSystemAuthenticationRequest;
+#assert MaliciousSDSystem reaches sdsentAssociationResponse;
+#assert MaliciousSDSystem reaches sdreceivedGetEurekaInfo;
+#assert MaliciousSDSystem reaches sdreceivedSignRParam;
+#assert MaliciousSDSystem reaches sdreceivedVersionRParam;
+#assert MaliciousSDSystem reaches sdreceivedNameRParam;
+#assert MaliciousSDSystem reaches sdreceivedSetupStateRParam;
+#assert MaliciousSDSystem reaches sdreceivedEthernetConnectedRParam;
+#assert MaliciousSDSystem reaches sdreceivedIPaddressRParam;
+#assert MaliciousSDSystem reaches sdreceivedSsdpUdnRParam;
+#assert MaliciousSDSystem reaches sdreceivedModelNameRParam;
+#assert MaliciousSDSystem reaches sdreceivedDeviceCapabilitiesRParam;
+#assert MaliciousSDSystem reaches sdreceivedSSIDSuffixRParam;
+#assert MaliciousSDSystem reaches sdreceivedTosAcceptedRParam;
+#assert MaliciousSDSystem reaches sdreceivedPublicKeyRParam;
+#assert MaliciousSDSystem reaches sdreceivedBSSIDRParam;
+#assert MaliciousSDSystem reaches sdreceivednewNonce;
+#assert MaliciousSDSystem reaches sdsentEurekaInfo;
+#assert MaliciousSDSystem reaches sdsentVersion;
+#assert MaliciousSDSystem reaches sdsentName;
+#assert MaliciousSDSystem reaches sdsentSetupState;
+#assert MaliciousSDSystem reaches sdsentEthernetConnected;
+#assert MaliciousSDSystem reaches sdsentIPaddress;
+#assert MaliciousSDSystem reaches sdsentSsdpUdn;
+#assert MaliciousSDSystem reaches sdsentModelName;
+#assert MaliciousSDSystem reaches sdsentDeviceCapabilities;
+#assert MaliciousSDSystem reaches sdsentSSIDSuffix;
+#assert MaliciousSDSystem reaches sdsentTosAccepted;
+#assert MaliciousSDSystem reaches sdsentBSSID;
+#assert MaliciousSDSystem reaches sdsentSDPublicKey;
+#assert MaliciousSDSystem reaches sdsentCertificate;
+#assert MaliciousSDSystem reaches sdsentIntermediateCerts;
+#assert MaliciousSDSystem reaches sdsentSignedData;
+#assert MaliciousSDSystem reaches sdsentsdReceivedNonce;
+#assert MaliciousSDSystem reaches sdreceivedPostScanWifi;
+#assert MaliciousSDSystem reaches sdsentSuccessScanResponse;
+#assert MaliciousSDSystem reaches sdreceivedGetScanResults;
+#assert MaliciousSDSystem reaches sdsentHomeWifiSSID;
+#assert MaliciousSDSystem reaches sdsentHomeWifiBSSID;
+#assert MaliciousSDSystem reaches sdsentFrequency;
+#assert MaliciousSDSystem reaches sdsentSignalLevel;
+#assert MaliciousSDSystem reaches sdsentWPAAuth7;
+#assert MaliciousSDSystem reaches sdsentWPACipher4;
+#assert MaliciousSDSystem reaches sdreceivedPostConnectWifi;
+#assert MaliciousSDSystem reaches sdreceivedHomeWifiSSID;
+#assert MaliciousSDSystem reaches sdreceivedAenc;
+#assert MaliciousSDSystem reaches sdreceivedpassword;
+#assert MaliciousSDSystem reaches sdreceivedPublicKey;
+#assert MaliciousSDSystem reaches sdreceivedWPAAuth7;
+#assert MaliciousSDSystem reaches sdreceivedWPACipher4;
+#assert MaliciousSDSystem reaches sdsentSuccessConnectRequest;
+#assert MaliciousSDSystem reaches sdsentAdec;
+#assert MaliciousSDSystem reaches sdsentsdReceivedPassword;
+#assert MaliciousSDSystem reaches sdsentSDPrivateKey;
+#assert MaliciousSDSystem reaches sdsentNewIPAddress;
+#assert MaliciousSDSystem reaches sdsentNewSetupState;
+#assert MaliciousSDSystem reaches sdreceivedPostSetEurekaInfo;
+#assert MaliciousSDSystem reaches sdreceivedNewName;
+#assert MaliciousSDSystem reaches sdreceivedOptInStatusTrue;
+#assert MaliciousSDSystem reaches sdsentSuccessSetRequest;
+#assert MaliciousSDSystem reaches sdreceivedPostSaveWifi;
+#assert MaliciousSDSystem reaches sdreceivedImmediateTrue;
+#assert MaliciousSDSystem reaches sdsentSuccessSaveRequest;
+#assert MaliciousSDSystem reaches sdreceivedMDNSDiscoveryRequest;
+#assert MaliciousSDSystem reaches sdsentMDNSDiscoveryResponse;
+#assert MaliciousSDSystem reaches sdsentValidScreenID;
+#assert MaliciousSDSystem reaches sdreceivedGetMdxSessionStatus;
+#assert MaliciousSDSystem reaches sdsentScreenID;
+#assert MaliciousCPSystem reaches cpreceivedChromecastWiFiBeacon;
+#assert MaliciousCPSystem reaches cpreceivedChromecastSSID;
+#assert MaliciousCPSystem reaches cpreceivedChromecastBSSID;
+#assert MaliciousCPSystem reaches cpsentChromecastSSID;
+#assert MaliciousCPSystem reaches cpsentOpenSystemAuthenticationRequest;
+#assert MaliciousCPSystem reaches cpreceivedassocResponse;
+#assert MaliciousCPSystem reaches cpsentGetEurekaInfo;
+#assert MaliciousCPSystem reaches cpsentSignRParam;
+#assert MaliciousCPSystem reaches cpsentVersionRParam;
+#assert MaliciousCPSystem reaches cpsentNameRParam;
+#assert MaliciousCPSystem reaches cpsentSetupStateRParam;
+#assert MaliciousCPSystem reaches cpsentEthernetConnectedRParam;
+#assert MaliciousCPSystem reaches cpsentIPaddressRParam;
+#assert MaliciousCPSystem reaches cpsentSsdpUdnRParam;
+#assert MaliciousCPSystem reaches cpsentModelNameRParam;
+#assert MaliciousCPSystem reaches cpsentDeviceCapabilitiesRParam;
+#assert MaliciousCPSystem reaches cpsentSSIDSuffixRParam;
+#assert MaliciousCPSystem reaches cpsentTosAcceptedRParam;
+#assert MaliciousCPSystem reaches cpsentPublicKeyRParam;
+#assert MaliciousCPSystem reaches cpsentBSSIDRParam;
+#assert MaliciousCPSystem reaches cpsentcpNonce;
+#assert MaliciousCPSystem reaches cpsentPostScanWifi;
+#assert MaliciousCPSystem reaches cpreceivedSuccessScanResponse;
+#assert MaliciousCPSystem reaches cpsentGetScanResults;
+#assert MaliciousCPSystem reaches cpreceivedhomeWifiSSID;
+#assert MaliciousCPSystem reaches cpreceivedhomeWifiBSSID;
+#assert MaliciousCPSystem reaches cpreceivedfrequency;
+#assert MaliciousCPSystem reaches cpreceivedsignalLevel;
+#assert MaliciousCPSystem reaches cpreceivedwpaAuth7;
+#assert MaliciousCPSystem reaches cpreceivedwpaCipher4;
+#assert MaliciousCPSystem reaches cpsentPostConnectWifi;
+#assert MaliciousCPSystem reaches cpsenthomeWifiSSID;
+#assert MaliciousCPSystem reaches cpsentAenc;
+#assert MaliciousCPSystem reaches cpsentPassword;
+#assert MaliciousCPSystem reaches cpsentcpSavedSDPublicKey;
+#assert MaliciousCPSystem reaches cpsentwpaAuth7;
+#assert MaliciousCPSystem reaches cpsentwpaCipher4;
+#assert MaliciousCPSystem reaches cpreceivedSuccessConnectRequest;
+#assert MaliciousCPSystem reaches cpreceivedAdec;
+#assert MaliciousCPSystem reaches cpreceivedPassword;
+#assert MaliciousCPSystem reaches cpreceivedSDPublicKey;
+#assert MaliciousCPSystem reaches cpreceivedSDPrivateKey;
+#assert MaliciousCPSystem reaches cpreceivedNewIPAddress;
+#assert MaliciousCPSystem reaches cpreceivedVersion;
+#assert MaliciousCPSystem reaches cpreceivedNewSetupState;
+#assert MaliciousCPSystem reaches cpsentPostSetEurekaInfo;
+#assert MaliciousCPSystem reaches cpsentNewName;
+#assert MaliciousCPSystem reaches cpsentOptInStatusTrue;
+#assert MaliciousCPSystem reaches cpreceivedSuccessSetRequest;
+#assert MaliciousCPSystem reaches cpsentPostSaveWifi;
+#assert MaliciousCPSystem reaches cpsentImmediateTrue;
+#assert MaliciousCPSystem reaches cpreceivedSuccessSaveRequest;
+#assert MaliciousCPSystem reaches cpsentMDNSDiscoveryRequest;
+#assert MaliciousCPSystem reaches cpreceivedMDNSDiscoveryResponse;
+#assert MaliciousCPSystem reaches cpsentGetMdxSessionStatus;
+#assert MaliciousCPSystem reaches cpreceivedScreenID;
+#assert MaliciousCPSystem reaches cpsentGetLoungeToken;
+#assert MaliciousCPSystem reaches cpsentScreenID;
+#assert MaliciousCPSystem reaches cpreceivedScreenIDAssociation;
+#assert MaliciousCPSystem reaches cpreceivedExpiration;
+#assert MaliciousCPSystem reaches cpsentGetScreenAvailability;
+#assert MaliciousCPSystem reaches cpsentScreenIDAssociation;
+#assert MaliciousCPSystem reaches cpreceivedAvailabilityResponse;
+#assert MaliciousCPSystem reaches cpsentPostBindRequest;
+#assert MaliciousCPSystem reaches cpsentDevice;
+#assert MaliciousCPSystem reaches cpsentID;
+#assert MaliciousCPSystem reaches cpsentControlPointName;
+#assert MaliciousCPSystem reaches cpsentAppName;
+#assert MaliciousCPSystem reaches cpsentMethodSetPlayList;
+#assert MaliciousCPSystem reaches cpsentVideoID;
+#assert MaliciousCPSystem reaches cpreceivedCurrentVideoID;
+#assert MaliciousCPSystem reaches cpreceivedSID;
+#assert MaliciousCPSystem reaches cpreceivedGsessionID;
+#assert MaliciousCPSystem reaches cpreceivedLoungeStatus;
+#assert MaliciousCPSystem reaches cpreceivedPlaylistModified;
+#assert MaliciousCPSystem reaches cpreceivedOnAutoplayModeChanged;
+#assert MaliciousCPSystem reaches cpreceivedOnPlaylistModeChanged;
+#assert MaliciousGSSystem reaches gsreceivedValidScreenID;
+#assert MaliciousGSSystem reaches gsreceivedGetLoungeToken;
+#assert MaliciousGSSystem reaches gsreceivedscreenID;
+#assert MaliciousGSSystem reaches gssentScreenIDAssociation;
+#assert MaliciousGSSystem reaches gssentExpiration;
+#assert MaliciousGSSystem reaches gssentScreenID;
+#assert MaliciousGSSystem reaches gsreceivedGetScreenAvailability;
+#assert MaliciousGSSystem reaches gsreceivedScreenIDAssociation;
+#assert MaliciousGSSystem reaches gssentAvailabilityResponse;
+#assert MaliciousGSSystem reaches gsreceivedPostBindRequest;
+#assert MaliciousGSSystem reaches gsreceivedDevice;
+#assert MaliciousGSSystem reaches gsreceivedID;
+#assert MaliciousGSSystem reaches gsreceivedControlPointName;
+#assert MaliciousGSSystem reaches gsreceivedAppName;
+#assert MaliciousGSSystem reaches gsreceivedMethodSetPlayList;
+#assert MaliciousGSSystem reaches gsreceivedVideoID;
+#assert MaliciousGSSystem reaches gssentCurrentVideoID;
+#assert MaliciousGSSystem reaches gssentSID;
+#assert MaliciousGSSystem reaches gssentGsessionID;
+#assert MaliciousGSSystem reaches gssentLoungeStatus;
+#assert MaliciousGSSystem reaches gssentPlaylistModified;
+#assert MaliciousGSSystem reaches gssentOnAutoplayModeChanged;
+#assert MaliciousGSSystem reaches gssentOnPlaylistModeChanged;
+#assert System reaches netAttsentChromecastWiFiBeacon;
+#assert System reaches netAttsentChromecastSSID;
+#assert System reaches netAttsentChromecastBSSID;
+#assert System reaches netAttsentOpenSystemAuthenticationRequest;
+#assert System reaches netAttsentAssociationResponse;
+#assert System reaches netAttsentGetEurekaInfo;
+#assert System reaches netAttsentEurekaInfo;
+#assert System reaches netAttsentNewNonce;
+#assert System reaches netAttsentName;
+#assert System reaches netAttsentSetupState;
+#assert System reaches netAttsentEthernetConnected;
+#assert System reaches netAttsentIPaddress;
+#assert System reaches netAttsentSsdpUdn;
+#assert System reaches netAttsentModelName;
+#assert System reaches netAttsentDeviceCapabilities;
+#assert System reaches netAttsentSSIDSuffix;
+#assert System reaches netAttsentTosAccepted;
+#assert System reaches netAttsentBSSID;
+#assert System reaches netAttsentSDPublicKey;
+#assert System reaches netAttsentCertificate;
+#assert System reaches netAttsentIntermediateCerts;
+#assert System reaches netAttsentSignedData;
+#assert System reaches netAttsentPostScanWifi;
+#assert System reaches netAttsentSuccessScanResponse;
+#assert System reaches netAttsentGetScanResults;
+#assert System reaches netAttsentHomeWifiSSID;
+#assert System reaches netAttsentHomeWifiBSSID;
+#assert System reaches netAttsentFrequency;
+#assert System reaches netAttsentSignalLevel;
+#assert System reaches netAttsentWPAAuth7;
+#assert System reaches netAttsentWPACipher4;
+#assert System reaches netAttsentPostConnectWifi;
+#assert System reaches netAttsentPassword;
+#assert System reaches netAttsentEncryptedPassword;
+#assert System reaches netAttsentTest;
+#assert System reaches netAttsentSuccessConnectRequest;
+#assert System reaches netAttsentNewIPAddress;
+#assert System reaches netAttsentVersion;
+#assert System reaches netAttsentNewSetupState;
+#assert System reaches netAttsentPostSetEurekaInfo;
+#assert System reaches netAttsentNewName;
+#assert System reaches netAttsentOptInStatusTrue;
+#assert System reaches netAttsentSuccessSetRequest;
+#assert System reaches netAttsentPostSaveWifi;
+#assert System reaches netAttsentImmediateTrue;
+#assert System reaches netAttsentSuccessSaveRequest;
+#assert System reaches netAttsentMDNSDiscoveryRequest;
+#assert System reaches netAttsentMDNSDiscoveryResponse;
+#assert System reaches netAttsentValidScreenID;
+#assert System reaches netAttsentGetMdxSessionStatus;
+#assert System reaches netAttsentScreenID;
+#assert System reaches netAttsentGetLoungeToken;
+#assert System reaches netAttsentExpiration;
+#assert System reaches netAttsentScreenIDAssociation;
+#assert System reaches netAttsentGetScreenAvailability;
+#assert System reaches netAttsentAvailabilityResponse;
+#assert System reaches netAttsentPostBindRequest;
+#assert System reaches netAttsentDevice;
+#assert System reaches netAttsentID;
+#assert System reaches netAttsentControlPointName;
+#assert System reaches netAttsentAppName;
+#assert System reaches netAttsentMethodSetPlayList;
+#assert System reaches netAttsentVideoID;
+#assert System reaches netAttsentCurrentVideoID;
+#assert System reaches netAttsentSID;
+#assert System reaches netAttsentGsessionID;
+#assert System reaches netAttsentLoungeStatus;
+#assert System reaches netAttsentPlaylistModified;
+#assert System reaches netAttsentOnAutoplayModeChanged;
+#assert System reaches netAttsentOnPlaylistModeChanged;
+#assert System reaches netAttsentSignRParam;
+#assert System reaches netAttsentVersionRParam;
+#assert System reaches netAttsentNameRParam;
+#assert System reaches netAttsentSetupStateRParam;
+#assert System reaches netAttsentEthernetConnectedRParam;
+#assert System reaches netAttsentIPaddressRParam;
+#assert System reaches netAttsentSsdpUdnRParam;
+#assert System reaches netAttsentModelNameRParam;
+#assert System reaches netAttsentDeviceCapabilitiesRParam;
+#assert System reaches netAttsentSSIDSuffixRParam;
+#assert System reaches netAttsentTosAcceptedRParam;
+#assert System reaches netAttsentPublicKeyRParam;
+#assert System reaches netAttsentBSSIDRParam;
+#assert System reaches netAttsentAenc;
+#assert System reaches netAttsentAdec;
+#assert System reaches netAttsentSDPrivateKey;
+var<Knowledge> AutoGeneratedAttackerKnowledge;
+AutoGeneratedNetworkAttacker()= wifi0?msg1->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15.msg16->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg16)}->AutoGeneratedNetworkAttacker()
+           []wifi0?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15.msg16.msg17->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg16)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg17)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15.msg16->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg16)}->AutoGeneratedNetworkAttacker()
+           []openwifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15.msg16.msg17->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg16)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg17)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15.msg16->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg16)}->AutoGeneratedNetworkAttacker()
+           []wifi?msg1.msg2.msg3.msg4.msg5.msg6.msg7.msg8.msg9.msg10.msg11.msg12.msg13.msg14.msg15.msg16.msg17->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg1)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg2)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg3)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg4)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg5)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg6)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg7)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg8)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg9)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg10)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg11)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg12)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg13)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg14)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg15)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg16)}->addKnwlge{AutoGeneratedAttackerKnowledge.addKnowledge(msg17)}->AutoGeneratedNetworkAttacker()
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastWiFiBeacon)==true){wifi0!ChromecastWiFiBeacon-> generatedStatUpdate{netAttsendchromecastwifibeacon=ChromecastWiFiBeacon}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastSSID)==true){wifi0!ChromecastSSID-> generatedStatUpdate{netAttsendchromecastssid=ChromecastSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastBSSID)==true){wifi0!ChromecastBSSID-> generatedStatUpdate{netAttsendchromecastbssid=ChromecastBSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OpenSystemAuthenticationRequest)==true){wifi0!OpenSystemAuthenticationRequest-> generatedStatUpdate{netAttsendopensystemauthenticationrequest=OpenSystemAuthenticationRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AssociationResponse)==true){wifi0!AssociationResponse-> generatedStatUpdate{netAttsendassociationresponse=AssociationResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetEurekaInfo)==true){wifi0!GetEurekaInfo-> generatedStatUpdate{netAttsendgeteurekainfo=GetEurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EurekaInfo)==true){wifi0!EurekaInfo-> generatedStatUpdate{netAttsendeurekainfo=EurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewNonce)==true){wifi0!NewNonce-> generatedStatUpdate{netAttsendnewnonce=NewNonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Name)==true){wifi0!Name-> generatedStatUpdate{netAttsendname=Name}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SetupState)==true){wifi0!SetupState-> generatedStatUpdate{netAttsendsetupstate=SetupState}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EthernetConnected)==true){wifi0!EthernetConnected-> generatedStatUpdate{netAttsendethernetconnected=EthernetConnected}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IPaddress)==true){wifi0!IPaddress-> generatedStatUpdate{netAttsendipaddress=IPaddress}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SsdpUdn)==true){wifi0!SsdpUdn-> generatedStatUpdate{netAttsendssdpudn=SsdpUdn}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ModelName)==true){wifi0!ModelName-> generatedStatUpdate{netAttsendmodelname=ModelName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceCapabilities)==true){wifi0!DeviceCapabilities-> generatedStatUpdate{netAttsenddevicecapabilities=DeviceCapabilities}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSIDSuffix)==true){wifi0!SSIDSuffix-> generatedStatUpdate{netAttsendssidsuffix=SSIDSuffix}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(TosAccepted)==true){wifi0!TosAccepted-> generatedStatUpdate{netAttsendtosaccepted=TosAccepted}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSID)==true){wifi0!BSSID-> generatedStatUpdate{netAttsendbssid=BSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SDPublicKey)==true){wifi0!SDPublicKey-> generatedStatUpdate{netAttsendsdpublickey=SDPublicKey}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Certificate)==true){wifi0!Certificate-> generatedStatUpdate{netAttsendcertificate=Certificate}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IntermediateCerts)==true){wifi0!IntermediateCerts-> generatedStatUpdate{netAttsendintermediatecerts=IntermediateCerts}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignedData)==true){wifi0!SignedData-> generatedStatUpdate{netAttsendsigneddata=SignedData}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostScanWifi)==true){wifi0!PostScanWifi-> generatedStatUpdate{netAttsendpostscanwifi=PostScanWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessScanResponse)==true){wifi0!SuccessScanResponse-> generatedStatUpdate{netAttsendsuccessscanresponse=SuccessScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetScanResults)==true){wifi0!GetScanResults-> generatedStatUpdate{netAttsendgetscanresults=GetScanResults}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HomeWifiSSID)==true){wifi0!HomeWifiSSID-> generatedStatUpdate{netAttsendhomewifissid=HomeWifiSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HomeWifiBSSID)==true){wifi0!HomeWifiBSSID-> generatedStatUpdate{netAttsendhomewifibssid=HomeWifiBSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Frequency)==true){wifi0!Frequency-> generatedStatUpdate{netAttsendfrequency=Frequency}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignalLevel)==true){wifi0!SignalLevel-> generatedStatUpdate{netAttsendsignallevel=SignalLevel}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(WPAAuth7)==true){wifi0!WPAAuth7-> generatedStatUpdate{netAttsendwpaauth7=WPAAuth7}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(WPACipher4)==true){wifi0!WPACipher4-> generatedStatUpdate{netAttsendwpacipher4=WPACipher4}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostConnectWifi)==true){wifi0!PostConnectWifi-> generatedStatUpdate{netAttsendpostconnectwifi=PostConnectWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Password)==true){wifi0!Password-> generatedStatUpdate{netAttsendpassword=Password}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EncryptedPassword)==true){wifi0!EncryptedPassword-> generatedStatUpdate{netAttsendencryptedpassword=EncryptedPassword}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Test)==true){wifi0!Test-> generatedStatUpdate{netAttsendtest=Test}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessConnectRequest)==true){wifi0!SuccessConnectRequest-> generatedStatUpdate{netAttsendsuccessconnectrequest=SuccessConnectRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewIPAddress)==true){wifi0!NewIPAddress-> generatedStatUpdate{netAttsendnewipaddress=NewIPAddress}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Version)==true){wifi0!Version-> generatedStatUpdate{netAttsendversion=Version}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewSetupState)==true){wifi0!NewSetupState-> generatedStatUpdate{netAttsendnewsetupstate=NewSetupState}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostSetEurekaInfo)==true){wifi0!PostSetEurekaInfo-> generatedStatUpdate{netAttsendpostseteurekainfo=PostSetEurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewName)==true){wifi0!NewName-> generatedStatUpdate{netAttsendnewname=NewName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OptInStatusTrue)==true){wifi0!OptInStatusTrue-> generatedStatUpdate{netAttsendoptinstatustrue=OptInStatusTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessSetRequest)==true){wifi0!SuccessSetRequest-> generatedStatUpdate{netAttsendsuccesssetrequest=SuccessSetRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostSaveWifi)==true){wifi0!PostSaveWifi-> generatedStatUpdate{netAttsendpostsavewifi=PostSaveWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ImmediateTrue)==true){wifi0!ImmediateTrue-> generatedStatUpdate{netAttsendimmediatetrue=ImmediateTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessSaveRequest)==true){wifi0!SuccessSaveRequest-> generatedStatUpdate{netAttsendsuccesssaverequest=SuccessSaveRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MDNSDiscoveryRequest)==true){wifi0!MDNSDiscoveryRequest-> generatedStatUpdate{netAttsendmdnsdiscoveryrequest=MDNSDiscoveryRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MDNSDiscoveryResponse)==true){wifi0!MDNSDiscoveryResponse-> generatedStatUpdate{netAttsendmdnsdiscoveryresponse=MDNSDiscoveryResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ValidScreenID)==true){wifi0!ValidScreenID-> generatedStatUpdate{netAttsendvalidscreenid=ValidScreenID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetMdxSessionStatus)==true){wifi0!GetMdxSessionStatus-> generatedStatUpdate{netAttsendgetmdxsessionstatus=GetMdxSessionStatus}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScreenID)==true){wifi0!ScreenID-> generatedStatUpdate{netAttsendscreenid=ScreenID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetLoungeToken)==true){wifi0!GetLoungeToken-> generatedStatUpdate{netAttsendgetloungetoken=GetLoungeToken}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Expiration)==true){wifi0!Expiration-> generatedStatUpdate{netAttsendexpiration=Expiration}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScreenIDAssociation)==true){wifi0!ScreenIDAssociation-> generatedStatUpdate{netAttsendscreenidassociation=ScreenIDAssociation}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetScreenAvailability)==true){wifi0!GetScreenAvailability-> generatedStatUpdate{netAttsendgetscreenavailability=GetScreenAvailability}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AvailabilityResponse)==true){wifi0!AvailabilityResponse-> generatedStatUpdate{netAttsendavailabilityresponse=AvailabilityResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostBindRequest)==true){wifi0!PostBindRequest-> generatedStatUpdate{netAttsendpostbindrequest=PostBindRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Device)==true){wifi0!Device-> generatedStatUpdate{netAttsenddevice=Device}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ID)==true){wifi0!ID-> generatedStatUpdate{netAttsendid=ID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ControlPointName)==true){wifi0!ControlPointName-> generatedStatUpdate{netAttsendcontrolpointname=ControlPointName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AppName)==true){wifi0!AppName-> generatedStatUpdate{netAttsendappname=AppName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MethodSetPlayList)==true){wifi0!MethodSetPlayList-> generatedStatUpdate{netAttsendmethodsetplaylist=MethodSetPlayList}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(VideoID)==true){wifi0!VideoID-> generatedStatUpdate{netAttsendvideoid=VideoID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CurrentVideoID)==true){wifi0!CurrentVideoID-> generatedStatUpdate{netAttsendcurrentvideoid=CurrentVideoID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SID)==true){wifi0!SID-> generatedStatUpdate{netAttsendsid=SID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GsessionID)==true){wifi0!GsessionID-> generatedStatUpdate{netAttsendgsessionid=GsessionID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LoungeStatus)==true){wifi0!LoungeStatus-> generatedStatUpdate{netAttsendloungestatus=LoungeStatus}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PlaylistModified)==true){wifi0!PlaylistModified-> generatedStatUpdate{netAttsendplaylistmodified=PlaylistModified}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OnAutoplayModeChanged)==true){wifi0!OnAutoplayModeChanged-> generatedStatUpdate{netAttsendonautoplaymodechanged=OnAutoplayModeChanged}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OnPlaylistModeChanged)==true){wifi0!OnPlaylistModeChanged-> generatedStatUpdate{netAttsendonplaylistmodechanged=OnPlaylistModeChanged}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignRParam)==true){wifi0!SignRParam-> generatedStatUpdate{netAttsendsignrparam=SignRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(VersionRParam)==true){wifi0!VersionRParam-> generatedStatUpdate{netAttsendversionrparam=VersionRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NameRParam)==true){wifi0!NameRParam-> generatedStatUpdate{netAttsendnamerparam=NameRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SetupStateRParam)==true){wifi0!SetupStateRParam-> generatedStatUpdate{netAttsendsetupstaterparam=SetupStateRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EthernetConnectedRParam)==true){wifi0!EthernetConnectedRParam-> generatedStatUpdate{netAttsendethernetconnectedrparam=EthernetConnectedRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IPaddressRParam)==true){wifi0!IPaddressRParam-> generatedStatUpdate{netAttsendipaddressrparam=IPaddressRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SsdpUdnRParam)==true){wifi0!SsdpUdnRParam-> generatedStatUpdate{netAttsendssdpudnrparam=SsdpUdnRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ModelNameRParam)==true){wifi0!ModelNameRParam-> generatedStatUpdate{netAttsendmodelnamerparam=ModelNameRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceCapabilitiesRParam)==true){wifi0!DeviceCapabilitiesRParam-> generatedStatUpdate{netAttsenddevicecapabilitiesrparam=DeviceCapabilitiesRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSIDSuffixRParam)==true){wifi0!SSIDSuffixRParam-> generatedStatUpdate{netAttsendssidsuffixrparam=SSIDSuffixRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(TosAcceptedRParam)==true){wifi0!TosAcceptedRParam-> generatedStatUpdate{netAttsendtosacceptedrparam=TosAcceptedRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PublicKeyRParam)==true){wifi0!PublicKeyRParam-> generatedStatUpdate{netAttsendpublickeyrparam=PublicKeyRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSIDRParam)==true){wifi0!BSSIDRParam-> generatedStatUpdate{netAttsendbssidrparam=BSSIDRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Aenc)==true){wifi0!Aenc-> generatedStatUpdate{netAttsendaenc=Aenc}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Adec)==true){wifi0!Adec-> generatedStatUpdate{netAttsendadec=Adec}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SDPrivateKey)==true){wifi0!SDPrivateKey-> generatedStatUpdate{netAttsendsdprivatekey=SDPrivateKey}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastWiFiBeacon)==true){openwifi!ChromecastWiFiBeacon-> generatedStatUpdate{netAttsendchromecastwifibeacon=ChromecastWiFiBeacon}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastSSID)==true){openwifi!ChromecastSSID-> generatedStatUpdate{netAttsendchromecastssid=ChromecastSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastBSSID)==true){openwifi!ChromecastBSSID-> generatedStatUpdate{netAttsendchromecastbssid=ChromecastBSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OpenSystemAuthenticationRequest)==true){openwifi!OpenSystemAuthenticationRequest-> generatedStatUpdate{netAttsendopensystemauthenticationrequest=OpenSystemAuthenticationRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AssociationResponse)==true){openwifi!AssociationResponse-> generatedStatUpdate{netAttsendassociationresponse=AssociationResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetEurekaInfo)==true){openwifi!GetEurekaInfo-> generatedStatUpdate{netAttsendgeteurekainfo=GetEurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EurekaInfo)==true){openwifi!EurekaInfo-> generatedStatUpdate{netAttsendeurekainfo=EurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewNonce)==true){openwifi!NewNonce-> generatedStatUpdate{netAttsendnewnonce=NewNonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Name)==true){openwifi!Name-> generatedStatUpdate{netAttsendname=Name}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SetupState)==true){openwifi!SetupState-> generatedStatUpdate{netAttsendsetupstate=SetupState}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EthernetConnected)==true){openwifi!EthernetConnected-> generatedStatUpdate{netAttsendethernetconnected=EthernetConnected}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IPaddress)==true){openwifi!IPaddress-> generatedStatUpdate{netAttsendipaddress=IPaddress}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SsdpUdn)==true){openwifi!SsdpUdn-> generatedStatUpdate{netAttsendssdpudn=SsdpUdn}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ModelName)==true){openwifi!ModelName-> generatedStatUpdate{netAttsendmodelname=ModelName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceCapabilities)==true){openwifi!DeviceCapabilities-> generatedStatUpdate{netAttsenddevicecapabilities=DeviceCapabilities}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSIDSuffix)==true){openwifi!SSIDSuffix-> generatedStatUpdate{netAttsendssidsuffix=SSIDSuffix}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(TosAccepted)==true){openwifi!TosAccepted-> generatedStatUpdate{netAttsendtosaccepted=TosAccepted}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSID)==true){openwifi!BSSID-> generatedStatUpdate{netAttsendbssid=BSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SDPublicKey)==true){openwifi!SDPublicKey-> generatedStatUpdate{netAttsendsdpublickey=SDPublicKey}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Certificate)==true){openwifi!Certificate-> generatedStatUpdate{netAttsendcertificate=Certificate}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IntermediateCerts)==true){openwifi!IntermediateCerts-> generatedStatUpdate{netAttsendintermediatecerts=IntermediateCerts}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignedData)==true){openwifi!SignedData-> generatedStatUpdate{netAttsendsigneddata=SignedData}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostScanWifi)==true){openwifi!PostScanWifi-> generatedStatUpdate{netAttsendpostscanwifi=PostScanWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessScanResponse)==true){openwifi!SuccessScanResponse-> generatedStatUpdate{netAttsendsuccessscanresponse=SuccessScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetScanResults)==true){openwifi!GetScanResults-> generatedStatUpdate{netAttsendgetscanresults=GetScanResults}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HomeWifiSSID)==true){openwifi!HomeWifiSSID-> generatedStatUpdate{netAttsendhomewifissid=HomeWifiSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HomeWifiBSSID)==true){openwifi!HomeWifiBSSID-> generatedStatUpdate{netAttsendhomewifibssid=HomeWifiBSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Frequency)==true){openwifi!Frequency-> generatedStatUpdate{netAttsendfrequency=Frequency}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignalLevel)==true){openwifi!SignalLevel-> generatedStatUpdate{netAttsendsignallevel=SignalLevel}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(WPAAuth7)==true){openwifi!WPAAuth7-> generatedStatUpdate{netAttsendwpaauth7=WPAAuth7}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(WPACipher4)==true){openwifi!WPACipher4-> generatedStatUpdate{netAttsendwpacipher4=WPACipher4}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostConnectWifi)==true){openwifi!PostConnectWifi-> generatedStatUpdate{netAttsendpostconnectwifi=PostConnectWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Password)==true){openwifi!Password-> generatedStatUpdate{netAttsendpassword=Password}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EncryptedPassword)==true){openwifi!EncryptedPassword-> generatedStatUpdate{netAttsendencryptedpassword=EncryptedPassword}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Test)==true){openwifi!Test-> generatedStatUpdate{netAttsendtest=Test}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessConnectRequest)==true){openwifi!SuccessConnectRequest-> generatedStatUpdate{netAttsendsuccessconnectrequest=SuccessConnectRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewIPAddress)==true){openwifi!NewIPAddress-> generatedStatUpdate{netAttsendnewipaddress=NewIPAddress}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Version)==true){openwifi!Version-> generatedStatUpdate{netAttsendversion=Version}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewSetupState)==true){openwifi!NewSetupState-> generatedStatUpdate{netAttsendnewsetupstate=NewSetupState}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostSetEurekaInfo)==true){openwifi!PostSetEurekaInfo-> generatedStatUpdate{netAttsendpostseteurekainfo=PostSetEurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewName)==true){openwifi!NewName-> generatedStatUpdate{netAttsendnewname=NewName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OptInStatusTrue)==true){openwifi!OptInStatusTrue-> generatedStatUpdate{netAttsendoptinstatustrue=OptInStatusTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessSetRequest)==true){openwifi!SuccessSetRequest-> generatedStatUpdate{netAttsendsuccesssetrequest=SuccessSetRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostSaveWifi)==true){openwifi!PostSaveWifi-> generatedStatUpdate{netAttsendpostsavewifi=PostSaveWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ImmediateTrue)==true){openwifi!ImmediateTrue-> generatedStatUpdate{netAttsendimmediatetrue=ImmediateTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessSaveRequest)==true){openwifi!SuccessSaveRequest-> generatedStatUpdate{netAttsendsuccesssaverequest=SuccessSaveRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MDNSDiscoveryRequest)==true){openwifi!MDNSDiscoveryRequest-> generatedStatUpdate{netAttsendmdnsdiscoveryrequest=MDNSDiscoveryRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MDNSDiscoveryResponse)==true){openwifi!MDNSDiscoveryResponse-> generatedStatUpdate{netAttsendmdnsdiscoveryresponse=MDNSDiscoveryResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ValidScreenID)==true){openwifi!ValidScreenID-> generatedStatUpdate{netAttsendvalidscreenid=ValidScreenID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetMdxSessionStatus)==true){openwifi!GetMdxSessionStatus-> generatedStatUpdate{netAttsendgetmdxsessionstatus=GetMdxSessionStatus}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScreenID)==true){openwifi!ScreenID-> generatedStatUpdate{netAttsendscreenid=ScreenID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetLoungeToken)==true){openwifi!GetLoungeToken-> generatedStatUpdate{netAttsendgetloungetoken=GetLoungeToken}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Expiration)==true){openwifi!Expiration-> generatedStatUpdate{netAttsendexpiration=Expiration}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScreenIDAssociation)==true){openwifi!ScreenIDAssociation-> generatedStatUpdate{netAttsendscreenidassociation=ScreenIDAssociation}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetScreenAvailability)==true){openwifi!GetScreenAvailability-> generatedStatUpdate{netAttsendgetscreenavailability=GetScreenAvailability}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AvailabilityResponse)==true){openwifi!AvailabilityResponse-> generatedStatUpdate{netAttsendavailabilityresponse=AvailabilityResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostBindRequest)==true){openwifi!PostBindRequest-> generatedStatUpdate{netAttsendpostbindrequest=PostBindRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Device)==true){openwifi!Device-> generatedStatUpdate{netAttsenddevice=Device}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ID)==true){openwifi!ID-> generatedStatUpdate{netAttsendid=ID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ControlPointName)==true){openwifi!ControlPointName-> generatedStatUpdate{netAttsendcontrolpointname=ControlPointName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AppName)==true){openwifi!AppName-> generatedStatUpdate{netAttsendappname=AppName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MethodSetPlayList)==true){openwifi!MethodSetPlayList-> generatedStatUpdate{netAttsendmethodsetplaylist=MethodSetPlayList}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(VideoID)==true){openwifi!VideoID-> generatedStatUpdate{netAttsendvideoid=VideoID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CurrentVideoID)==true){openwifi!CurrentVideoID-> generatedStatUpdate{netAttsendcurrentvideoid=CurrentVideoID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SID)==true){openwifi!SID-> generatedStatUpdate{netAttsendsid=SID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GsessionID)==true){openwifi!GsessionID-> generatedStatUpdate{netAttsendgsessionid=GsessionID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LoungeStatus)==true){openwifi!LoungeStatus-> generatedStatUpdate{netAttsendloungestatus=LoungeStatus}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PlaylistModified)==true){openwifi!PlaylistModified-> generatedStatUpdate{netAttsendplaylistmodified=PlaylistModified}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OnAutoplayModeChanged)==true){openwifi!OnAutoplayModeChanged-> generatedStatUpdate{netAttsendonautoplaymodechanged=OnAutoplayModeChanged}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OnPlaylistModeChanged)==true){openwifi!OnPlaylistModeChanged-> generatedStatUpdate{netAttsendonplaylistmodechanged=OnPlaylistModeChanged}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignRParam)==true){openwifi!SignRParam-> generatedStatUpdate{netAttsendsignrparam=SignRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(VersionRParam)==true){openwifi!VersionRParam-> generatedStatUpdate{netAttsendversionrparam=VersionRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NameRParam)==true){openwifi!NameRParam-> generatedStatUpdate{netAttsendnamerparam=NameRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SetupStateRParam)==true){openwifi!SetupStateRParam-> generatedStatUpdate{netAttsendsetupstaterparam=SetupStateRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EthernetConnectedRParam)==true){openwifi!EthernetConnectedRParam-> generatedStatUpdate{netAttsendethernetconnectedrparam=EthernetConnectedRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IPaddressRParam)==true){openwifi!IPaddressRParam-> generatedStatUpdate{netAttsendipaddressrparam=IPaddressRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SsdpUdnRParam)==true){openwifi!SsdpUdnRParam-> generatedStatUpdate{netAttsendssdpudnrparam=SsdpUdnRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ModelNameRParam)==true){openwifi!ModelNameRParam-> generatedStatUpdate{netAttsendmodelnamerparam=ModelNameRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceCapabilitiesRParam)==true){openwifi!DeviceCapabilitiesRParam-> generatedStatUpdate{netAttsenddevicecapabilitiesrparam=DeviceCapabilitiesRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSIDSuffixRParam)==true){openwifi!SSIDSuffixRParam-> generatedStatUpdate{netAttsendssidsuffixrparam=SSIDSuffixRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(TosAcceptedRParam)==true){openwifi!TosAcceptedRParam-> generatedStatUpdate{netAttsendtosacceptedrparam=TosAcceptedRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PublicKeyRParam)==true){openwifi!PublicKeyRParam-> generatedStatUpdate{netAttsendpublickeyrparam=PublicKeyRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSIDRParam)==true){openwifi!BSSIDRParam-> generatedStatUpdate{netAttsendbssidrparam=BSSIDRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Aenc)==true){openwifi!Aenc-> generatedStatUpdate{netAttsendaenc=Aenc}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Adec)==true){openwifi!Adec-> generatedStatUpdate{netAttsendadec=Adec}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SDPrivateKey)==true){openwifi!SDPrivateKey-> generatedStatUpdate{netAttsendsdprivatekey=SDPrivateKey}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastWiFiBeacon)==true){wifi!ChromecastWiFiBeacon-> generatedStatUpdate{netAttsendchromecastwifibeacon=ChromecastWiFiBeacon}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastSSID)==true){wifi!ChromecastSSID-> generatedStatUpdate{netAttsendchromecastssid=ChromecastSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ChromecastBSSID)==true){wifi!ChromecastBSSID-> generatedStatUpdate{netAttsendchromecastbssid=ChromecastBSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OpenSystemAuthenticationRequest)==true){wifi!OpenSystemAuthenticationRequest-> generatedStatUpdate{netAttsendopensystemauthenticationrequest=OpenSystemAuthenticationRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AssociationResponse)==true){wifi!AssociationResponse-> generatedStatUpdate{netAttsendassociationresponse=AssociationResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetEurekaInfo)==true){wifi!GetEurekaInfo-> generatedStatUpdate{netAttsendgeteurekainfo=GetEurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EurekaInfo)==true){wifi!EurekaInfo-> generatedStatUpdate{netAttsendeurekainfo=EurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewNonce)==true){wifi!NewNonce-> generatedStatUpdate{netAttsendnewnonce=NewNonce}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Name)==true){wifi!Name-> generatedStatUpdate{netAttsendname=Name}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SetupState)==true){wifi!SetupState-> generatedStatUpdate{netAttsendsetupstate=SetupState}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EthernetConnected)==true){wifi!EthernetConnected-> generatedStatUpdate{netAttsendethernetconnected=EthernetConnected}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IPaddress)==true){wifi!IPaddress-> generatedStatUpdate{netAttsendipaddress=IPaddress}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SsdpUdn)==true){wifi!SsdpUdn-> generatedStatUpdate{netAttsendssdpudn=SsdpUdn}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ModelName)==true){wifi!ModelName-> generatedStatUpdate{netAttsendmodelname=ModelName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceCapabilities)==true){wifi!DeviceCapabilities-> generatedStatUpdate{netAttsenddevicecapabilities=DeviceCapabilities}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSIDSuffix)==true){wifi!SSIDSuffix-> generatedStatUpdate{netAttsendssidsuffix=SSIDSuffix}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(TosAccepted)==true){wifi!TosAccepted-> generatedStatUpdate{netAttsendtosaccepted=TosAccepted}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSID)==true){wifi!BSSID-> generatedStatUpdate{netAttsendbssid=BSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SDPublicKey)==true){wifi!SDPublicKey-> generatedStatUpdate{netAttsendsdpublickey=SDPublicKey}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Certificate)==true){wifi!Certificate-> generatedStatUpdate{netAttsendcertificate=Certificate}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IntermediateCerts)==true){wifi!IntermediateCerts-> generatedStatUpdate{netAttsendintermediatecerts=IntermediateCerts}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignedData)==true){wifi!SignedData-> generatedStatUpdate{netAttsendsigneddata=SignedData}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostScanWifi)==true){wifi!PostScanWifi-> generatedStatUpdate{netAttsendpostscanwifi=PostScanWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessScanResponse)==true){wifi!SuccessScanResponse-> generatedStatUpdate{netAttsendsuccessscanresponse=SuccessScanResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetScanResults)==true){wifi!GetScanResults-> generatedStatUpdate{netAttsendgetscanresults=GetScanResults}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HomeWifiSSID)==true){wifi!HomeWifiSSID-> generatedStatUpdate{netAttsendhomewifissid=HomeWifiSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(HomeWifiBSSID)==true){wifi!HomeWifiBSSID-> generatedStatUpdate{netAttsendhomewifibssid=HomeWifiBSSID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Frequency)==true){wifi!Frequency-> generatedStatUpdate{netAttsendfrequency=Frequency}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignalLevel)==true){wifi!SignalLevel-> generatedStatUpdate{netAttsendsignallevel=SignalLevel}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(WPAAuth7)==true){wifi!WPAAuth7-> generatedStatUpdate{netAttsendwpaauth7=WPAAuth7}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(WPACipher4)==true){wifi!WPACipher4-> generatedStatUpdate{netAttsendwpacipher4=WPACipher4}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostConnectWifi)==true){wifi!PostConnectWifi-> generatedStatUpdate{netAttsendpostconnectwifi=PostConnectWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Password)==true){wifi!Password-> generatedStatUpdate{netAttsendpassword=Password}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EncryptedPassword)==true){wifi!EncryptedPassword-> generatedStatUpdate{netAttsendencryptedpassword=EncryptedPassword}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Test)==true){wifi!Test-> generatedStatUpdate{netAttsendtest=Test}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessConnectRequest)==true){wifi!SuccessConnectRequest-> generatedStatUpdate{netAttsendsuccessconnectrequest=SuccessConnectRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewIPAddress)==true){wifi!NewIPAddress-> generatedStatUpdate{netAttsendnewipaddress=NewIPAddress}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Version)==true){wifi!Version-> generatedStatUpdate{netAttsendversion=Version}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewSetupState)==true){wifi!NewSetupState-> generatedStatUpdate{netAttsendnewsetupstate=NewSetupState}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostSetEurekaInfo)==true){wifi!PostSetEurekaInfo-> generatedStatUpdate{netAttsendpostseteurekainfo=PostSetEurekaInfo}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NewName)==true){wifi!NewName-> generatedStatUpdate{netAttsendnewname=NewName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OptInStatusTrue)==true){wifi!OptInStatusTrue-> generatedStatUpdate{netAttsendoptinstatustrue=OptInStatusTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessSetRequest)==true){wifi!SuccessSetRequest-> generatedStatUpdate{netAttsendsuccesssetrequest=SuccessSetRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostSaveWifi)==true){wifi!PostSaveWifi-> generatedStatUpdate{netAttsendpostsavewifi=PostSaveWifi}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ImmediateTrue)==true){wifi!ImmediateTrue-> generatedStatUpdate{netAttsendimmediatetrue=ImmediateTrue}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SuccessSaveRequest)==true){wifi!SuccessSaveRequest-> generatedStatUpdate{netAttsendsuccesssaverequest=SuccessSaveRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MDNSDiscoveryRequest)==true){wifi!MDNSDiscoveryRequest-> generatedStatUpdate{netAttsendmdnsdiscoveryrequest=MDNSDiscoveryRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MDNSDiscoveryResponse)==true){wifi!MDNSDiscoveryResponse-> generatedStatUpdate{netAttsendmdnsdiscoveryresponse=MDNSDiscoveryResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ValidScreenID)==true){wifi!ValidScreenID-> generatedStatUpdate{netAttsendvalidscreenid=ValidScreenID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetMdxSessionStatus)==true){wifi!GetMdxSessionStatus-> generatedStatUpdate{netAttsendgetmdxsessionstatus=GetMdxSessionStatus}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScreenID)==true){wifi!ScreenID-> generatedStatUpdate{netAttsendscreenid=ScreenID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetLoungeToken)==true){wifi!GetLoungeToken-> generatedStatUpdate{netAttsendgetloungetoken=GetLoungeToken}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Expiration)==true){wifi!Expiration-> generatedStatUpdate{netAttsendexpiration=Expiration}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ScreenIDAssociation)==true){wifi!ScreenIDAssociation-> generatedStatUpdate{netAttsendscreenidassociation=ScreenIDAssociation}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GetScreenAvailability)==true){wifi!GetScreenAvailability-> generatedStatUpdate{netAttsendgetscreenavailability=GetScreenAvailability}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AvailabilityResponse)==true){wifi!AvailabilityResponse-> generatedStatUpdate{netAttsendavailabilityresponse=AvailabilityResponse}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PostBindRequest)==true){wifi!PostBindRequest-> generatedStatUpdate{netAttsendpostbindrequest=PostBindRequest}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Device)==true){wifi!Device-> generatedStatUpdate{netAttsenddevice=Device}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ID)==true){wifi!ID-> generatedStatUpdate{netAttsendid=ID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ControlPointName)==true){wifi!ControlPointName-> generatedStatUpdate{netAttsendcontrolpointname=ControlPointName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(AppName)==true){wifi!AppName-> generatedStatUpdate{netAttsendappname=AppName}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(MethodSetPlayList)==true){wifi!MethodSetPlayList-> generatedStatUpdate{netAttsendmethodsetplaylist=MethodSetPlayList}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(VideoID)==true){wifi!VideoID-> generatedStatUpdate{netAttsendvideoid=VideoID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(CurrentVideoID)==true){wifi!CurrentVideoID-> generatedStatUpdate{netAttsendcurrentvideoid=CurrentVideoID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SID)==true){wifi!SID-> generatedStatUpdate{netAttsendsid=SID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(GsessionID)==true){wifi!GsessionID-> generatedStatUpdate{netAttsendgsessionid=GsessionID}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(LoungeStatus)==true){wifi!LoungeStatus-> generatedStatUpdate{netAttsendloungestatus=LoungeStatus}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PlaylistModified)==true){wifi!PlaylistModified-> generatedStatUpdate{netAttsendplaylistmodified=PlaylistModified}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OnAutoplayModeChanged)==true){wifi!OnAutoplayModeChanged-> generatedStatUpdate{netAttsendonautoplaymodechanged=OnAutoplayModeChanged}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(OnPlaylistModeChanged)==true){wifi!OnPlaylistModeChanged-> generatedStatUpdate{netAttsendonplaylistmodechanged=OnPlaylistModeChanged}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SignRParam)==true){wifi!SignRParam-> generatedStatUpdate{netAttsendsignrparam=SignRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(VersionRParam)==true){wifi!VersionRParam-> generatedStatUpdate{netAttsendversionrparam=VersionRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(NameRParam)==true){wifi!NameRParam-> generatedStatUpdate{netAttsendnamerparam=NameRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SetupStateRParam)==true){wifi!SetupStateRParam-> generatedStatUpdate{netAttsendsetupstaterparam=SetupStateRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(EthernetConnectedRParam)==true){wifi!EthernetConnectedRParam-> generatedStatUpdate{netAttsendethernetconnectedrparam=EthernetConnectedRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(IPaddressRParam)==true){wifi!IPaddressRParam-> generatedStatUpdate{netAttsendipaddressrparam=IPaddressRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SsdpUdnRParam)==true){wifi!SsdpUdnRParam-> generatedStatUpdate{netAttsendssdpudnrparam=SsdpUdnRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(ModelNameRParam)==true){wifi!ModelNameRParam-> generatedStatUpdate{netAttsendmodelnamerparam=ModelNameRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(DeviceCapabilitiesRParam)==true){wifi!DeviceCapabilitiesRParam-> generatedStatUpdate{netAttsenddevicecapabilitiesrparam=DeviceCapabilitiesRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SSIDSuffixRParam)==true){wifi!SSIDSuffixRParam-> generatedStatUpdate{netAttsendssidsuffixrparam=SSIDSuffixRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(TosAcceptedRParam)==true){wifi!TosAcceptedRParam-> generatedStatUpdate{netAttsendtosacceptedrparam=TosAcceptedRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(PublicKeyRParam)==true){wifi!PublicKeyRParam-> generatedStatUpdate{netAttsendpublickeyrparam=PublicKeyRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(BSSIDRParam)==true){wifi!BSSIDRParam-> generatedStatUpdate{netAttsendbssidrparam=BSSIDRParam}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Aenc)==true){wifi!Aenc-> generatedStatUpdate{netAttsendaenc=Aenc}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(Adec)==true){wifi!Adec-> generatedStatUpdate{netAttsendadec=Adec}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()}
+           []if (AutoGeneratedAttackerKnowledge.knows(SDPrivateKey)==true){wifi!SDPrivateKey-> generatedStatUpdate{netAttsendsdprivatekey=SDPrivateKey}->AutoGeneratedNetworkAttacker()}else{AutoGeneratedNetworkAttacker()};

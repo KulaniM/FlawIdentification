@@ -36,7 +36,7 @@ namespace UI
                 using (new WaitCursor())
                 {
                    
-                     model.Verify();
+                     //model.Verify();
                 }
             }
         }

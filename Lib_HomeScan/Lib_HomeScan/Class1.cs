@@ -113,7 +113,7 @@ namespace PAT.Lib
             if (!getIntList().Contains(i))
             {
 				Console.WriteLine("TEST Lib !!!!!! addKnowledge " + i);
-
+ 
 
                 if (true)
                 {
